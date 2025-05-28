@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.mcq import router as mcq_router
+from app.routes.paper import router as paper_router
 from app.database import lifespan
 
 # -----------------------------------------------------------------------------
@@ -37,6 +38,7 @@ app.add_middleware(
 # Your MCQ routes, all under /mcqs
 # -----------------------------------------------------------------------------
 app.include_router(mcq_router, tags=["MCQs"])
+app.include_router(paper_router, tags=["Papers"])
 
 # -----------------------------------------------------------------------------
 # Make it runnable with `python main.py`

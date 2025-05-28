@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import Optional, List
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Relationship
+from datetime import datetime 
+from pydantic import BaseModel
 
 class AnswerOption(str, Enum):
     OPTION_A = "option_a"
@@ -45,3 +47,22 @@ class MCQUpdate(SQLModel):
 
 class MCQBulkCreate(SQLModel):
     mcqs: List[MCQCreate]
+
+# --- New DB tables (add these to models.py and migrate) ---
+class PaperModel(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    mcq_links: List["PaperMCQ"] = Relationship(back_populates="paper")
+
+class PaperMCQ(SQLModel, table=True):
+    paper_id: int = Field(foreign_key="papermodel.id", primary_key=True)
+    mcq_id: int = Field(foreign_key="mcq.id", primary_key=True)
+    paper: PaperModel     = Relationship(back_populates="mcq_links")
+    mcq: MCQ        = Relationship()
+    
+
+# --- Response schemas ---
+class PaperResponse(BaseModel):
+    id: int
+    created_at: datetime
+    mcqs: List[MCQ]
