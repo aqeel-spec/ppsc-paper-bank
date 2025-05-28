@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes.mcq import router as mcq_router
 from app.routes.paper import router as paper_router
 from app.database import lifespan
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import HTMLResponse
 
 # -----------------------------------------------------------------------------
 # App instantiation
@@ -16,12 +18,69 @@ app = FastAPI(
     version="0.0.1",
 )
 
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
+    # THIS is what you need:
+    schema["servers"] = [
+        {"url": "https://ppsc-paper-bank.vercel.app", "description": "Production server"}
+    ]
+    app.openapi_schema = schema
+    return schema
+
+app.openapi = custom_openapi
+
 # -----------------------------------------------------------------------------
 # A tiny health-check so you never get a blank 500
 # -----------------------------------------------------------------------------
 @app.get("/", summary="Health check")
 async def health_check():
     return {"status": "ok"}
+
+
+@app.get(
+    "/privacy",
+    response_class=HTMLResponse,
+    summary="Privacy Policy",
+    description="Our privacy policy for the PPSC MCQ Power Bank GPT."
+)
+async def privacy_policy():
+    html = """
+    <html>
+      <head><title>Privacy Policy</title></head>
+      <body>
+        <h1>Privacy Policy</h1>
+        <p><strong>Last updated:</strong> 2025-05-28</p>
+        <p>
+          This is an educational service provided to help students prepare for exams
+          by generating and organizing MCQs. We do <em>not</em> collect any personal
+          data unless you explicitly provide it in your questions or requests.
+        </p>
+        <h2>Data Usage</h2>
+        <ul>
+          <li>All MCQs and usage logs are stored anonymously for analytics only.</li>
+          <li>No personally identifiable information (PII) is retained.</li>
+          <li>We do not share your data with third parties.</li>
+        </ul>
+        <h2>Cookies & Tracking</h2>
+        <p>
+          We use only essential cookies for session management; no tracking or advertising cookies are used.
+        </p>
+        <h2>Contact</h2>
+        <p>
+          If you have any questions about this policy, please contact us at
+          <a href="mailto:privacy@ppsc-paper-bank.vercel.app">privacy@ppsc-paper-bank.vercel.app</a>.
+        </p>
+      </body>
+    </html>
+    """
+    return HTMLResponse(content=html, status_code=200)
 
 # -----------------------------------------------------------------------------
 # CORS (open for now; lock down in production!)
