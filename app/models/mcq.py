@@ -13,6 +13,7 @@ class AnswerOption(str, Enum):
 class Category(str, Enum):
     ENGLISH = "english"
     MATHEMATICS = "mathematics"
+    URDU = "urdu"
     GENERAL_KNOWLEDGE = "general_knowledge"
     PAKISTAN_STUDIES = "pakistan_studies"
     COMPUTER_SCIENCE = "computer_science"

@@ -56,6 +56,8 @@ def get_session():
 def create_db_and_tables():
     """Creates the database tables."""
     SQLModel.metadata.create_all(engine)
+    # drop all tables first (for dev)
+    # SQLModel.metadata.drop_all(engine)
     # SQLModel.metadata.clear()
     
     
