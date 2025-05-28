@@ -19,9 +19,8 @@ async def create_mcq(
     mcq_in: MCQCreate,
     session: AsyncSession = Depends(get_async_session),
 ):
-    # convert Pydantic-create → ORM
+    # 🎯 Always use AsyncSession here!
     db_mcq = MCQ.model_validate(mcq_in)
-
     session.add(db_mcq)
     await session.commit()
     await session.refresh(db_mcq)
@@ -33,11 +32,11 @@ async def get_mcqs(
     category: Optional[Category] = None,
     session: AsyncSession = Depends(get_async_session),
 ):
-    q = select(MCQ)
+    stmt = select(MCQ)
     if category:
-        q = q.where(MCQ.category == category)
+        stmt = stmt.where(MCQ.category == category)
 
-    result = await session.execute(q)
+    result = await session.execute(stmt)
     return result.scalars().all()
 
 
@@ -46,10 +45,12 @@ async def get_mcq(
     mcq_id: int,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(select(MCQ).where(MCQ.id == mcq_id))
+    result = await session.execute(
+        select(MCQ).where(MCQ.id == mcq_id)
+    )
     mcq = result.scalar_one_or_none()
     if not mcq:
-        raise HTTPException(status_code=404, detail="MCQ not found")
+        raise HTTPException(404, "MCQ not found")
     return mcq
 
 
@@ -59,14 +60,16 @@ async def update_mcq(
     mcq_update: MCQUpdate,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(select(MCQ).where(MCQ.id == mcq_id))
+    result = await session.execute(
+        select(MCQ).where(MCQ.id == mcq_id)
+    )
     db_mcq = result.scalar_one_or_none()
     if not db_mcq:
-        raise HTTPException(status_code=404, detail="MCQ not found")
+        raise HTTPException(404, "MCQ not found")
 
     update_data = mcq_update.model_dump(exclude_unset=True)
-    for key, val in update_data.items():
-        setattr(db_mcq, key, val)
+    for field, val in update_data.items():
+        setattr(db_mcq, field, val)
 
     session.add(db_mcq)
     await session.commit()
@@ -79,10 +82,12 @@ async def delete_mcq(
     mcq_id: int,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(select(MCQ).where(MCQ.id == mcq_id))
+    result = await session.execute(
+        select(MCQ).where(MCQ.id == mcq_id)
+    )
     mcq = result.scalar_one_or_none()
     if not mcq:
-        raise HTTPException(status_code=404, detail="MCQ not found")
+        raise HTTPException(404, "MCQ not found")
 
     await session.delete(mcq)
     await session.commit()
@@ -90,10 +95,10 @@ async def delete_mcq(
 
 @router.post("/bulk", response_model=List[MCQ], status_code=status.HTTP_201_CREATED)
 async def create_mcqs_bulk(
-    mcqs: MCQBulkCreate,
+    payload: MCQBulkCreate,
     session: AsyncSession = Depends(get_async_session),
 ):
-    db_mcqs = [MCQ.model_validate(item) for item in mcqs.mcqs]
+    db_mcqs = [MCQ.model_validate(item) for item in payload.mcqs]
     session.add_all(db_mcqs)
     await session.commit()
     for obj in db_mcqs:
@@ -106,5 +111,7 @@ async def get_mcqs_by_category(
     category: Category,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(select(MCQ).where(MCQ.category == category))
+    result = await session.execute(
+        select(MCQ).where(MCQ.category == category)
+    )
     return result.scalars().all()
