@@ -1,6 +1,6 @@
 import asyncio
 from app.database import async_session_maker
-from app.models.mcq import MCQ, AnswerOption
+from app.models.mcq import MCQ, AnswerOption, Category
 
 async def seed_database():
     async with async_session_maker() as session:
@@ -11,7 +11,8 @@ async def seed_database():
                 option_b="Lahore",
                 option_c="Karachi",
                 option_d="Peshawar",
-                correct_answer=AnswerOption.OPTION_A
+                correct_answer=AnswerOption.OPTION_A,
+                category=Category.PAKISTAN_STUDIES
             ),
             MCQ(
                 question_text="Which river is known as the lifeline of Punjab?",
@@ -19,7 +20,8 @@ async def seed_database():
                 option_b="Jhelum",
                 option_c="Chenab",
                 option_d="Ravi",
-                correct_answer=AnswerOption.OPTION_A
+                correct_answer=AnswerOption.OPTION_A,
+                category=Category.PAKISTAN_STUDIES
             ),
             MCQ(
                 question_text="Who was the founder of Pakistan?",
@@ -27,13 +29,12 @@ async def seed_database():
                 option_b="Quaid-e-Azam Muhammad Ali Jinnah",
                 option_c="Liaquat Ali Khan",
                 option_d="Sir Syed Ahmad Khan",
-                correct_answer=AnswerOption.OPTION_B
+                correct_answer=AnswerOption.OPTION_B,
+                category=Category.PAKISTAN_STUDIES
             )
         ]
         
-        for mcq in sample_mcqs:
-            session.add(mcq)
-        
+        session.add_all(sample_mcqs)
         await session.commit()
 
 if __name__ == "__main__":

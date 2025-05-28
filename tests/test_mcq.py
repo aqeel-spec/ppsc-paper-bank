@@ -1,10 +1,10 @@
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.mcq import MCQ, MCQCreate  # import both your ORM model and the Pydantic create schema
+from app.models.mcq import MCQ, MCQCreate, Category
 
-def create_test_mcq_data(category: str = "english") -> dict:
+def create_test_mcq_data() -> dict:
     return {
         "question_text": "Test question?",
         "option_a": "Option A",
@@ -12,7 +12,7 @@ def create_test_mcq_data(category: str = "english") -> dict:
         "option_c": "Option C",
         "option_d": "Option D",
         "correct_answer": "option_a",
-        "category": category
+        "category": Category.ENGLISH
     }
 
 @pytest.mark.asyncio
@@ -27,11 +27,11 @@ async def test_create_mcq(client: AsyncClient, async_session: AsyncSession):
     body = response.json()
     mcq_id = body["id"]
     assert body["question_text"] == payload["question_text"]
-    assert body["category"].lower() == payload["category"].lower()
+    assert body["category"] == payload["category"]
 
     # 3) Verify that the record exists in the database
-    mcq = await async_session.get(MCQ, mcq_id)
-    assert mcq is not None
-    assert mcq.question_text == payload["question_text"]
-    assert mcq.category.name.lower() == payload["category"].lower()
+    result = await async_session.get(MCQ, mcq_id)
+    assert result is not None
+    assert result.question_text == payload["question_text"]
+    assert result.category == payload["category"]
 

@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_async_session
 from app.models.mcq import MCQ, MCQCreate, MCQUpdate, MCQBulkCreate, Category
@@ -19,7 +19,6 @@ async def create_mcq(
     mcq_in: MCQCreate,
     session: AsyncSession = Depends(get_async_session),
 ):
-    # 🎯 Always use AsyncSession here!
     db_mcq = MCQ.model_validate(mcq_in)
     session.add(db_mcq)
     await session.commit()
@@ -32,11 +31,10 @@ async def get_mcqs(
     category: Optional[Category] = None,
     session: AsyncSession = Depends(get_async_session),
 ):
-    stmt = select(MCQ)
+    query = select(MCQ)
     if category:
-        stmt = stmt.where(MCQ.category == category)
-
-    result = await session.execute(stmt)
+        query = query.where(MCQ.category == category)
+    result = await session.execute(query)
     return result.scalars().all()
 
 
@@ -45,9 +43,8 @@ async def get_mcq(
     mcq_id: int,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(
-        select(MCQ).where(MCQ.id == mcq_id)
-    )
+    query = select(MCQ).where(MCQ.id == mcq_id)
+    result = await session.execute(query)
     mcq = result.scalar_one_or_none()
     if not mcq:
         raise HTTPException(404, "MCQ not found")
@@ -60,9 +57,8 @@ async def update_mcq(
     mcq_update: MCQUpdate,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(
-        select(MCQ).where(MCQ.id == mcq_id)
-    )
+    query = select(MCQ).where(MCQ.id == mcq_id)
+    result = await session.execute(query)
     db_mcq = result.scalar_one_or_none()
     if not db_mcq:
         raise HTTPException(404, "MCQ not found")
@@ -82,9 +78,8 @@ async def delete_mcq(
     mcq_id: int,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(
-        select(MCQ).where(MCQ.id == mcq_id)
-    )
+    query = select(MCQ).where(MCQ.id == mcq_id)
+    result = await session.execute(query)
     mcq = result.scalar_one_or_none()
     if not mcq:
         raise HTTPException(404, "MCQ not found")
@@ -111,7 +106,6 @@ async def get_mcqs_by_category(
     category: Category,
     session: AsyncSession = Depends(get_async_session),
 ):
-    result = await session.execute(
-        select(MCQ).where(MCQ.category == category)
-    )
+    query = select(MCQ).where(MCQ.category == category)
+    result = await session.execute(query)
     return result.scalars().all()
