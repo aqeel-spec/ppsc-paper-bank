@@ -1,9 +1,11 @@
 import asyncio
-from app.database import async_session_maker
+# from app.database import async_session_maker
+from app.routes.sessionDep import get_session
+from sqlmodel import Session
 from app.models.mcq import MCQ, AnswerOption, Category
 
 async def seed_database():
-    async with async_session_maker() as session:
+    async with get_session() as session:
         sample_mcqs = [
             MCQ(
                 question_text="What is the capital of Pakistan?",
