@@ -1,46 +1,83 @@
-# app/database.py
-
-import os
-from typing import AsyncGenerator
-
+# TH_BACK/apis/utils/db.py
+from contextlib import asynccontextmanager
+from sqlmodel import Session, SQLModel, create_engine
+from fastapi import FastAPI
+from app import settings
 from dotenv import load_dotenv
-from sqlmodel import SQLModel
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+import os
+import sys
 
-# Load environment variables
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set")
+load_dotenv()  # Load environment variables from .env file
 
-# Create async engine
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=True,
-    connect_args={"ssl": True},
+
+# 1) Figure out which ENV we’re in (default to “production”)
+env = os.getenv("ENV", "production").lower()
+
+# 2) Pick the right URL var
+if env == "test":
+    db_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+else:
+    db_url = os.getenv("DATABASE_URL")
+
+# 3) Bail if nothing is set
+if not db_url:
+    print(
+        "❌ ERROR: DATABASE_URL is not defined in your environment",
+        file=sys.stderr,
+    )
+    raise RuntimeError("DATABASE_URL is not defined")
+
+# 4) Use it!
+connection_string = db_url
+
+# 5) For logging: grab the scheme (e.g. “postgresql+asyncpg”) so we can uppercase it
+db_scheme = connection_string.split("://", 1)[0].upper()
+
+print(f"🔗 Connecting to : {db_scheme} database ")
+    
+
+# recycle connections after 5 minutes
+# to correspond with the compute scale down
+engine = create_engine(
+    connection_string, pool_recycle=300
 )
 
-# Create async session maker
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
 
-async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get a SQLModel AsyncSession that auto-closes"""
-    async with async_session_maker() as session:
+
+def get_engine():
+    """Returns the database engine."""
+    return engine
+
+def get_session():
+    with Session(engine) as session:
         yield session
 
-async def init_db() -> None:
-    """Initialize the database, creating all tables"""
-    # Import all models to ensure they're registered
-    import app.models.mcq
 
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+def create_db_and_tables():
+    """Creates the database tables."""
+    SQLModel.metadata.create_all(engine)
+    # SQLModel.metadata.clear()
+    
+    
+ 
 
-async def shutdown_db() -> None:
-    """Cleanup database connections"""
-    await engine.dispose()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 1) Create tables at startup
+    print("Creating tables…")
+    create_db_and_tables()
+    print("Tables created.")
+    
+    yield
 
+    # # 2) Capture and store the running event loop on app.state
+    # loop = asyncio.get_running_loop()
+    # app.state.loop = loop
+    # print("Event loop stored on app.state.loop:", loop)
+
+    # yield  # app is now running
+
+    # # 3) Teardown (optional): dispose the engine
+    # print("Shutting down DB engine…")
+    # await engine.dispose()
+    # print("Engine shut down.")

@@ -20,6 +20,7 @@ psycopg2-binary = "^2.9.10"
 aiosqlite = "^0.21.0"
 psycopg2 = "^2.9.10"
 asgiref = "^3.8.1"
+pymysql = "^1.1.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"

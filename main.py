@@ -1,38 +1,19 @@
 # main.py
-
-import os
-import logging
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 from app.routes.mcq import router as mcq_router
-
-from app.database import init_db, shutdown_db, get_async_session
-from contextlib import asynccontextmanager
+from app.database import lifespan
 
 # -----------------------------------------------------------------------------
 # App instantiation
 # -----------------------------------------------------------------------------
 # app = FastAPI(title=)
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # 1) on startup:
-    await init_db()
-
-    yield
-
-    # 2) on shutdown (optional):
-    await shutdown_db()
-
 app = FastAPI(
     lifespan=lifespan,
     title="PPSC MCQ Power Bank",
     version="0.0.1",
 )
-
 
 # -----------------------------------------------------------------------------
 # A tiny health-check so you never get a blank 500
