@@ -15,24 +15,33 @@
             Available Papers <span class="text-gray-500">({{ total_papers }})</span>
         </h1>
 
-        <!-- global “download all” buttons -->
+        <!-- global controls -->
         <div class="flex flex-col sm:flex-row sm:space-x-4 mb-8">
+            <!-- Download all Q-only -->
             <a href="/papers/pdf/all?show_answers=false"
                 class="mb-2 sm:mb-0 inline-block px-5 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
                 Download All (Q-Only)
             </a>
+
+            <!-- Download all with answers -->
             <a href="/papers/pdf/all?show_answers=true"
-                class="inline-block px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                class="mb-2 sm:mb-0 inline-block px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
                 Download All (With Answers)
+            </a>
+
+            <!-- NEW: View all in browser -->
+            <a href="/views/papers/all?show_answers=true"
+                class="inline-block px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                View All Papers
             </a>
         </div>
 
-        <!-- grid of papers -->
+        <!-- grid of individual papers -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {% for paper in papers %}
             <div class="bg-white rounded-2xl shadow-md hover:shadow-lg transition p-6 flex flex-col justify-between">
                 <div>
-                    <h2 class="text-xl font-semibold mb-1">Paper #{{ paper.id }}</h2>
+                    <h2 class="text-xl font-semibold mb-1">Paper # {{ paper.id }}</h2>
                     <p class="text-sm text-gray-500 mb-2">{{ paper.created_at }}</p>
                     <p><strong>{{ paper.length }}</strong> questions</p>
                 </div>

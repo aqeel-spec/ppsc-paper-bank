@@ -1,16 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ur" dir="rtl">
 
 <head>
     <meta charset="UTF-8" />
-    <title>All Papers (With Answers)</title>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
+    <title>سوال نامہ (جوابات کے ساتھ)</title>
     <style>
+        /* 1) Load your local font */
+        @font-face {
+            font-family: "Noto Nastaliq Urdu";
+            src: url("/static/fonts/NotoNastaliqUrdu-Regular.ttf") format("truetype");
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        /* 2) Base styles */
         body {
-            font-family: 'Noto Nastaliq Urdu', serif;
-            direction: rtl;
             margin: 0.5cm;
+            font-family: "Noto Nastaliq Urdu", serif;
             font-size: 12px;
+            background: white;
         }
 
         h1 {
@@ -20,10 +28,18 @@
             font-weight: normal;
         }
 
+        /* 3) Responsive container for horizontal scroll */
+        .table-wrapper {
+            overflow-x: auto;
+            margin-bottom: 1cm;
+        }
+
+        /* 4) Table styling */
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 1cm;
+            min-width: 600px;
+            /* ensure good fit */
         }
 
         th,
@@ -38,6 +54,7 @@
             text-align: center;
         }
 
+        /* 5) Options flex layout */
         .answers {
             display: flex;
             flex-wrap: wrap;
@@ -48,25 +65,33 @@
             flex: 1 1 45%;
         }
 
+        /* 6) Correct answer highlight */
         .correct {
             color: green;
             font-weight: bold;
+            text-align: center;
         }
 
-        .explanation {
+        /* 7) Explanation row */
+        .explanation td {
+            background: #fafafa;
             font-size: 10px;
             color: #333;
-            padding: 4px;
             border-bottom: 1px solid #999;
         }
 
+        /* 8) Print-specific rules */
         @media print {
+            .table-wrapper {
+                overflow: visible;
+            }
+
             tr {
-                page-break-inside: avoid
+                page-break-inside: avoid;
             }
 
             thead {
-                display: table-header-group
+                display: table-header-group;
             }
         }
     </style>
@@ -75,38 +100,41 @@
 <body>
     {% for p in papers %}
     <h1>سوال نامہ #{{ p.paper_id }} ({{ p.created_at.strftime("%Y-%m-%d %H:%M") }})</h1>
-    <table>
-        <thead>
-            <tr>
-                <th style="width:4%">#</th>
-                <th style="width:40%">سوال</th>
-                <th style="width:40%">جوابات</th>
-                <th style="width:10%">صحیح</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for mcq in p.mcqs %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ mcq.question_text }}</td>
-                <td>
-                    <div class="answers">
-                        <div class="option">A. {{ mcq.option_a }}</div>
-                        <div class="option">B. {{ mcq.option_b }}</div>
-                        <div class="option">C. {{ mcq.option_c }}</div>
-                        <div class="option">D. {{ mcq.option_d }}</div>
-                    </div>
-                </td>
-                <td class="correct" style="text-align:center">{{ mcq.correct_answer.name[-1] }}</td>
-            </tr>
-            {% if mcq.explanation %}
-            <tr class="explanation">
-                <td colspan="4"><strong>تفصیل:</strong> {{ mcq.explanation }}</td>
-            </tr>
-            {% endif %}
-            {% endfor %}
-        </tbody>
-    </table>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:4%;">#</th>
+                    <th style="width:40%;">سوال</th>
+                    <th style="width:40%;">جوابات</th>
+                    <th style="width:10%;">صحیح</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for mcq in p.mcqs %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ mcq.question_text }}</td>
+                    <td>
+                        <div class="answers">
+                            <div class="option">A. {{ mcq.option_a }}</div>
+                            <div class="option">B. {{ mcq.option_b }}</div>
+                            <div class="option">C. {{ mcq.option_c }}</div>
+                            <div class="option">D. {{ mcq.option_d }}</div>
+                        </div>
+                    </td>
+                    <td class="correct">{{ mcq.correct_answer.name[-1] }}</td>
+                </tr>
+                {% if mcq.explanation %}
+                <tr class="explanation">
+                    <td colspan="4"><strong>تفصیل:</strong> {{ mcq.explanation }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% endfor %}
 </body>
 
