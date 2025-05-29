@@ -1,0 +1,77 @@
+{# app/utils/temp1.html #}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Available Papers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 text-gray-800">
+    <div class="max-w-7xl mx-auto p-4">
+        <h1 class="text-3xl font-bold mb-6">
+            Available Papers <span class="text-gray-500">({{ total_papers }})</span>
+        </h1>
+
+        <!-- global “download all” buttons -->
+        <div class="flex flex-col sm:flex-row sm:space-x-4 mb-8">
+            <a href="/papers/pdf/all?show_answers=false"
+                class="mb-2 sm:mb-0 inline-block px-5 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                Download All (Q-Only)
+            </a>
+            <a href="/papers/pdf/all?show_answers=true"
+                class="inline-block px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                Download All (With Answers)
+            </a>
+        </div>
+
+        <!-- grid of papers -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for paper in papers %}
+            <div class="bg-white rounded-2xl shadow-md hover:shadow-lg transition p-6 flex flex-col justify-between">
+                <div>
+                    <h2 class="text-xl font-semibold mb-1">Paper #{{ paper.id }}</h2>
+                    <p class="text-sm text-gray-500 mb-2">{{ paper.created_at }}</p>
+                    <p><strong>{{ paper.length }}</strong> questions</p>
+                </div>
+                <div class="mt-6 flex flex-wrap gap-2">
+                    <a href="/papers/{{ paper.id }}/view"
+                        class="flex-1 text-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                        View
+                    </a>
+                    <a href="/papers/{{ paper.id }}/pdf?show_answers=false"
+                        class="flex-1 text-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                        Q-Only PDF
+                    </a>
+                    <a href="/papers/{{ paper.id }}/pdf?show_answers=true"
+                        class="flex-1 text-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                        With Answers
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- pagination -->
+        <div class="mt-10 flex justify-center items-center space-x-4">
+            {% if page > 1 %}
+            <a href="?page={{ page-1 }}&per_page={{ per_page }}"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition">
+                « Prev
+            </a>
+            {% endif %}
+
+            <span class="text-gray-600">Page {{ page }} of {{ total_pages }}</span>
+
+            {% if page < total_pages %} <a href="?page={{ page+1 }}&per_page={{ per_page }}"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition">
+                Next »
+                </a>
+                {% endif %}
+        </div>
+    </div>
+</body>
+
+</html>

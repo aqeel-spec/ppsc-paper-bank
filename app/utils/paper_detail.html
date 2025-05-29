@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Paper #{{ paper_id }}</title>
+    <style>
+        @font-face {
+            font-family: "Noto Nastaliq Urdu";
+            src: url("/static/fonts/NotoNastaliqUrdu-Regular.ttf") format("truetype");
+        }
+
+        body {
+            font-family: "Noto Nastaliq Urdu", serif;
+            direction: rtl;
+            margin: 0.5cm;
+            font-size: 12px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 0.5em;
+            font-size: 1.2em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1em;
+        }
+
+        th,
+        td {
+            border: 1px solid #333;
+            padding: 4px 6px;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f0f0f0;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        tbody tr:nth-child(odd) {
+            background: #fafafa;
+        }
+
+        /* —— NEW: flex layout for options —— */
+        .answers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+        }
+
+        .answers .option {
+            flex: 1 1 45%;
+            /* min width, so two per row on typical paper sizes */
+        }
+
+        .explanation {
+            font-size: 10px;
+            color: #333;
+            padding: 4px 6px;
+            border-bottom: 1px solid #999;
+        }
+
+        @media print {
+            tr {
+                page-break-inside: avoid;
+            }
+
+            thead {
+                display: table-header-group;
+            }
+
+            tfoot {
+                display: table-footer-group;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Paper #{{ paper_id }} ({{ created_at.strftime("%Y-%m-%d %H:%M") }})</h1>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width:4%;">#</th>
+                <th style="width:36%;">سوال</th>
+                <th style="width:40%;">جوابات</th>
+                <th style="width:10%;">صحیح</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for mcq in mcqs %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ mcq.question_text }}</td>
+                <td>
+                    <div class="answers">
+                        <div class="option">A. {{ mcq.option_a }}</div>
+                        <div class="option">B. {{ mcq.option_b }}</div>
+                        <div class="option">C. {{ mcq.option_c }}</div>
+                        <div class="option">D. {{ mcq.option_d }}</div>
+                    </div>
+                </td>
+                <td style="text-align:center;">{{ mcq.correct_answer.name[-1] }}</td>
+            </tr>
+            {% if mcq.explanation %}
+            <tr class="explanation">
+                <td colspan="4">
+                    <strong>Explanation:</strong> {{ mcq.explanation }}
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+
+</html>

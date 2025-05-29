@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Paper #{{ paper_id }}</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 1rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+        }
+
+        ol {
+            margin-top: 1rem;
+        }
+
+        li+li {
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Paper #{{ paper_id }} <small>({{ created_at }})</small></h1>
+    <ol>
+        {% for mcq in mcqs %}
+        <li>
+            <p><strong>{{ mcq.question_text }}</strong></p>
+            <ul>
+                <li>A. {{ mcq.option_a }}</li>
+                <li>B. {{ mcq.option_b }}</li>
+                <li>C. {{ mcq.option_c }}</li>
+                <li>D. {{ mcq.option_d }}</li>
+            </ul>
+            <p><em>Answer: {{ mcq.correct_answer.value.replace('_', ' ')|upper }}</em></p>
+            {% if mcq.explanation %}
+            <p><small>Explanation: {{ mcq.explanation }}</small></p>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+</body>
+
+</html>

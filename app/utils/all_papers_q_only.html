@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>All Papers (Questions Only)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Nastaliq Urdu', serif;
+            direction: rtl;
+            margin: 0.5cm;
+            font-size: 12px;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 0.5em 0;
+            font-size: 1.1em;
+            font-weight: normal;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1cm;
+        }
+
+        th,
+        td {
+            border: 1px solid #333;
+            padding: 4px 6px;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f5f5f5;
+            text-align: center;
+        }
+
+        .answers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+        }
+
+        .option {
+            flex: 1 1 45%;
+        }
+
+        @media print {
+            tr {
+                page-break-inside: avoid
+            }
+
+            thead {
+                display: table-header-group
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% for p in papers %}
+    <h1>سوال نامہ #{{ p.paper_id }} ({{ p.created_at.strftime("%Y-%m-%d %H:%M") }})</h1>
+    <table>
+        <thead>
+            <tr>
+                <th style="width:4%">#</th>
+                <th style="width:56%">سوال</th>
+                <th style="width:40%">جوابات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for mcq in p.mcqs %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ mcq.question_text }}</td>
+                <td>
+                    <div class="answers">
+                        <div class="option">A. {{ mcq.option_a }}</div>
+                        <div class="option">B. {{ mcq.option_b }}</div>
+                        <div class="option">C. {{ mcq.option_c }}</div>
+                        <div class="option">D. {{ mcq.option_d }}</div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endfor %}
+</body>
+
+</html>

@@ -3,9 +3,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.mcq import router as mcq_router
 from app.routes.paper import router as paper_router
+from app.routes.scrape import router as scrape_router
+from app.routes.papers_view import router as papers_view_router
 from app.database import lifespan
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s │ %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 
 # -----------------------------------------------------------------------------
 # App instantiation
@@ -18,6 +30,12 @@ app = FastAPI(
     version="0.0.1",
 )
 
+# mount your static directory
+app.mount(
+    "/static",
+    StaticFiles(directory="app/utils/static"),
+    name="static",
+)
 
 def custom_openapi():
     if app.openapi_schema:
@@ -29,7 +47,8 @@ def custom_openapi():
     )
     # THIS is what you need:
     schema["servers"] = [
-        {"url": "https://ppsc-paper-bank.vercel.app", "description": "Production server"}
+       # {"url": "https://ppsc-paper-bank.vercel.app", "description": "Production server"}
+       {"url": "http://localhost:8000", "description": "Production server"}
     ]
     app.openapi_schema = schema
     return schema
@@ -93,11 +112,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 # -----------------------------------------------------------------------------
 # Your MCQ routes, all under /mcqs
 # -----------------------------------------------------------------------------
 app.include_router(mcq_router, tags=["MCQs"])
 app.include_router(paper_router, tags=["Papers"])
+app.include_router(scrape_router, tags=["Scraping"])
+app.include_router(papers_view_router, tags=["Papers View"])
 
 # -----------------------------------------------------------------------------
 # Make it runnable with `python main.py`

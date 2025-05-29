@@ -56,10 +56,34 @@ def get_session():
 def create_db_and_tables():
     """Creates the database tables."""
     SQLModel.metadata.create_all(engine)
+    
     # drop all tables first (for dev)
     # SQLModel.metadata.drop_all(engine)
+    # print("Dropping all tables…")
     # SQLModel.metadata.clear()
-    
+# from sqlalchemy import text
+# def create_db_and_tables():
+#     """
+#     Drops all tables (and their associated composite types) in dependency order,
+#     then recreates everything from SQLModel.metadata.
+#     """
+#     print("Dropping tables & types (with CASCADE)…")
+#     with engine.begin() as conn:
+#         # Drop tables in reverse-dependency order
+#         conn.execute(text("DROP TABLE IF EXISTS paper_mcq CASCADE;"))
+#         conn.execute(text("DROP TABLE IF EXISTS paper CASCADE;"))
+#         conn.execute(text("DROP TABLE IF EXISTS mcq CASCADE;"))
+#         conn.execute(text("DROP TABLE IF EXISTS category CASCADE;"))
+
+#         # ALSO drop the leftover composite types that PostgreSQL created
+#         conn.execute(text("DROP TYPE IF EXISTS paper_mcq CASCADE;"))
+#         conn.execute(text("DROP TYPE IF EXISTS paper CASCADE;"))
+#         conn.execute(text("DROP TYPE IF EXISTS mcq CASCADE;"))
+#         conn.execute(text("DROP TYPE IF EXISTS category CASCADE;"))
+
+#     print("Recreating tables…")
+#     SQLModel.metadata.create_all(engine)
+#     print("Tables created.")
     
  
 
