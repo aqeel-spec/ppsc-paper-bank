@@ -78,7 +78,10 @@ def extract_mcqs(soup, category_slug):
 
 def main():
     # 1) spin up DB & tables
-    engine = create_engine("sqlite:///./mcq.db", echo=False)
+    engine = create_engine(
+        "postgresql://aqeelshahzad1215:lyALVYh48Pom@ep-dry-block-77954970-pooler.us-east-2.aws.neon.tech/mcq_db", pool_recycle=300
+    )
+    # engine = create_engine("sqlite:///./mcq.db", echo=False)
     SQLModel.metadata.create_all(engine)
 
     cats = get_category_links()
