@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import select, func, desc
 
 from .sessionDep import SessionDep
-from app.models.mcq import PaperModel
+from app.models import PaperModel
 
 router = APIRouter(prefix="/views")
 templates = Jinja2Templates(directory="app/utils")

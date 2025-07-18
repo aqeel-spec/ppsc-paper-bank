@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import re
 from urllib.parse import urljoin
 from sqlmodel import SQLModel, Session, create_engine
-from app.models.mcq import MCQ, AnswerOption  # ← your SQLModel MCQ class with explanation & category fields
+from app.models import MCQ, AnswerOption  # ← your SQLModel MCQ class with explanation & category fields
 
 # ──────────────────────────────────────────────────────────────────────────────
 # scraper functions (exactly as before, minus the json.dump)

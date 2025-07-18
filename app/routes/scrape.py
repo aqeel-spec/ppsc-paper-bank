@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 
 from sqlmodel import Session, select
 from app.database import engine
-from app.models.mcq import MCQ, AnswerOption, Category
+from app.models import MCQ, AnswerOption, Category
 from app.routes.sessionDep import SessionDep
 
 # configure a module-level logger

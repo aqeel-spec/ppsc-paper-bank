@@ -5,6 +5,7 @@ from app.routes.mcq import router as mcq_router
 from app.routes.paper import router as paper_router
 from app.routes.scrape import router as scrape_router
 from app.routes.papers_view import router as papers_view_router
+from app.routes.category import router as category_router
 from app.database import lifespan
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
@@ -121,6 +122,7 @@ app.include_router(mcq_router, tags=["MCQs"])
 app.include_router(paper_router, tags=["Papers"])
 app.include_router(scrape_router, tags=["Scraping"])
 app.include_router(papers_view_router, tags=["Papers View"])
+app.include_router(category_router, tags=["Categories"])
 
 # -----------------------------------------------------------------------------
 # Make it runnable with `python main.py`

@@ -15,18 +15,19 @@ fastapi = "^0.115.12"
 sqlmodel = "^0.0.24"
 python-dotenv = "^1.1.0"
 uvicorn = "^0.34.2"
-asyncpg = "^0.30.0"
-psycopg2-binary = "^2.9.10"
-aiosqlite = "^0.21.0"
-psycopg2 = "^2.9.10"
-asgiref = "^3.8.1"
+# MySQL drivers
 pymysql = "^1.1.1"
+cryptography = "^3.4.8"
+# Web scraping
 requests = "^2.32.3"
 beautifulsoup4 = "^4.13.4"
 lxml = "^5.4.0"
+# Template and PDF generation
 jinja2 = "^3.1.6"
 xhtml2pdf = "^0.2.17"
 weasyprint = "^65.1"
+# Other utilities
+asgiref = "^3.8.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"

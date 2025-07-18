@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.mcq import MCQ, MCQCreate, Category
+from app.models import MCQ, MCQCreate, Category
 
 def create_test_mcq_data() -> dict:
     return {

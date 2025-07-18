@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlmodel import SQLModel, Field, select, func, desc, Relationship
 from .sessionDep import SessionDep  # yields an AsyncSession
 # from mcq import MCQ as MCQModel
-from app.models.mcq import PaperModel, PaperMCQ, MCQ as MCQModel
+from app.models import PaperModel, PaperMCQ, MCQ as MCQModel
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, StreamingResponse
 from io import BytesIO

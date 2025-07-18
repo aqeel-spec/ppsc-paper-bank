@@ -1,9 +1,8 @@
 """
-Legacy compatibility module for MCQ models.
-This file is kept for backward compatibility. Please use the specific model files instead.
+Models package for PPSC Paper Bank application.
 """
 
-# Import all models from the new modular structure
+from .base import TimestampMixin, BaseModel
 from .category import (
     Category, 
     CategoryCreate, 
@@ -18,9 +17,16 @@ from .mcqs_bank import (
     MCQ, MCQBase, MCQCreate, MCQUpdate, MCQBulkCreate, MCQRead, AnswerOption
 )
 from .paper import PaperModel, PaperMCQ, PaperCreate, PaperUpdate, PaperResponse
+from .website import Website, WebsiteCreate, WebsiteUpdate, WebsiteRead
+from .websites import Websites, WebsitesCreate, WebsitesUpdate, WebsitesRead
+from .top_bar import TopBar, TopBarCreate, TopBarUpdate, TopBarRead
+from .side_bar import SideBar, SideBarCreate, SideBarUpdate, SideBarRead
 
-# For backward compatibility, expose all the classes that were previously in this file
 __all__ = [
+    # Base models
+    "TimestampMixin",
+    "BaseModel",
+    
     # Enums
     "AnswerOption",
     
@@ -33,9 +39,6 @@ __all__ = [
     "CategoryService",
     "CategorySlugManager",
     "create_slug",
-    "CategoryCreate",
-    "CategoryUpdate", 
-    "CategoryRead",
     
     # MCQ models
     "MCQ",
@@ -51,5 +54,26 @@ __all__ = [
     "PaperCreate",
     "PaperUpdate",
     "PaperResponse",
+    
+    # Website models
+    "Website",
+    "WebsiteCreate",
+    "WebsiteUpdate",
+    "WebsiteRead",
+    
+    # Websites models
+    "Websites",
+    "WebsitesCreate", 
+    "WebsitesUpdate",
+    "WebsitesRead",
+    
+    # Navigation models
+    "TopBar",
+    "TopBarCreate",
+    "TopBarUpdate",
+    "TopBarRead",
+    "SideBar", 
+    "SideBarCreate",
+    "SideBarUpdate",
+    "SideBarRead",
 ]
-

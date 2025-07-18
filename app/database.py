@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 import os
 import sys
 
+# Import all models to ensure they are registered with SQLModel metadata
+from app.models import *  # This ensures all table models are registered
+
 load_dotenv()  # Load environment variables from .env file
 
 

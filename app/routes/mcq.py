@@ -10,7 +10,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select, desc, func
 
-from app.models.mcq import (
+from app.models import (
     MCQ, MCQCreate, MCQUpdate, MCQBulkCreate,
     Category
 )
