@@ -16,6 +16,15 @@ class WebsiteSideService:
         """Initialize session headers."""
         self.session.headers = {}
 
+    def _detect_website_type(self, url: str) -> str:
+        """Detect the website type based on the URL."""
+        if 'pakmcqs.com' in url:
+            return 'pakmcqs'
+        elif 'testpointpk.com' in url:
+            return 'testpoint'
+        else:
+            return 'unknown'
+
     def extract_sidebar_urls(self, page_url: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Extract URLs from sidebar widgets and detect website type.
@@ -56,6 +65,36 @@ class WebsiteSideService:
                 'total_urls': 0,
                 'website_type': 'unknown'
             }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Parsing failed: {str(e)}",
+                'sections': [],
+                'total_sections': 0,
+                'total_urls': 0,
+                'website_type': 'unknown'
+            }
+
+    def _extract_sidebar_urls_from_soup(self, soup: BeautifulSoup, page_url: str) -> Dict[str, Any]:
+        """
+        Extract sidebar URLs from a pre-parsed BeautifulSoup object.
+        This method allows reusing an already fetched and parsed page.
+        """
+        try:
+            website_type = self._detect_website_type(page_url)
+            sidebar_sections = self._extract_sidebar_urls_based_on_site(soup, page_url)
+            
+            total_urls = sum(len(section.get('urls', [])) for section in sidebar_sections)
+            
+            return {
+                'success': True,
+                'source_url': page_url,
+                'website_type': website_type,
+                'sections': sidebar_sections,
+                'total_sections': len(sidebar_sections),
+                'total_urls': total_urls
+            }
+            
         except Exception as e:
             return {
                 'success': False,

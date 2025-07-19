@@ -13,6 +13,18 @@ class WebsiteTopService(Generic[T]):
     
     urls: List[T]  # Accept a list of URLs as input
     session: requests.Session = field(default_factory=requests.Session)
+    headers: Dict[str, str] = field(default_factory=lambda: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    })
+
+    def _detect_website_type(self, url: str) -> str:
+        """Detect the website type based on the URL."""
+        if 'pakmcqs.com' in url:
+            return 'pakmcqs'
+        elif 'testpointpk.com' in url:
+            return 'testpoint'
+        else:
+            return 'unknown'
     
     def __post_init__(self):
         """Update session headers after the dataclass is initialized."""
@@ -62,6 +74,44 @@ class WebsiteTopService(Generic[T]):
                 'total_urls': 0,
                 'website_type': 'unknown'
             }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Parsing failed: {str(e)}",
+                'urls': [],
+                'total_urls': 0,
+                'website_type': 'unknown'
+            }
+
+    def _extract_urls_from_soup(self, soup: BeautifulSoup, page_url: str) -> Dict[str, Any]:
+        """
+        Extract URLs from a pre-parsed BeautifulSoup object.
+        This method allows reusing an already fetched and parsed page.
+        """
+        try:
+            website_type = self._detect_website_type(page_url)
+            
+            if website_type == 'pakmcqs':
+                urls = self._extract_table_urls_pakmcqs(soup)
+            elif website_type == 'testpoint':
+                urls = self._extract_table_urls_testpoint(soup)
+            else:
+                return {
+                    'success': False,
+                    'error': f"Unsupported website type: {website_type}",
+                    'urls': [],
+                    'total_urls': 0,
+                    'website_type': website_type
+                }
+
+            return {
+                'success': True,
+                'source_url': page_url,
+                'website_type': website_type,
+                'urls': urls,
+                'total_urls': len(urls)
+            }
+            
         except Exception as e:
             return {
                 'success': False,
