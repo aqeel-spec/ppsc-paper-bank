@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from sqlmodel import SQLModel, Field, Column
@@ -14,7 +14,7 @@ class Website(SQLModel, table=True):
     is_paper_exit: bool = Field(default=False)
     is_side_bar: bool = Field(default=False)
     website_name: Optional[int] = None
-    paper_urls: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    paper_urls: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
     pages_count: Optional[int] = None
     current_page_url: Optional[str] = None
     last_scrapped_url: Optional[int] = None
@@ -46,7 +46,7 @@ class WebsiteCreate(SQLModel):
     is_paper_exit: bool = False
     is_side_bar: bool = False
     website_name: Optional[int] = None
-    paper_urls: Optional[List[str]] = None
+    paper_urls: Optional[List[Dict[str, Any]]] = None
     pages_count: Optional[int] = None
     current_page_url: Optional[str] = None
     last_scrapped_url: Optional[int] = None
@@ -61,7 +61,7 @@ class WebsiteUpdate(SQLModel):
     is_paper_exit: Optional[bool] = None
     is_side_bar: Optional[bool] = None
     website_name: Optional[int] = None
-    paper_urls: Optional[List[str]] = None
+    paper_urls: Optional[List[Dict[str, Any]]] = None
     pages_count: Optional[int] = None
     current_page_url: Optional[str] = None
     last_scrapped_url: Optional[int] = None
@@ -77,7 +77,7 @@ class WebsiteRead(SQLModel):
     is_paper_exit: bool
     is_side_bar: bool
     website_name: Optional[int] = None
-    paper_urls: Optional[List[str]] = None
+    paper_urls: Optional[List[Dict[str, Any]]] = None
     pages_count: Optional[int] = None
     current_page_url: Optional[str] = None
     last_scrapped_url: Optional[int] = None
