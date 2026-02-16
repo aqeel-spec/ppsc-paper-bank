@@ -61,19 +61,60 @@ Once the application is running, you can access:
 - Swagger UI documentation at `http://localhost:8000/docs`
 - ReDoc documentation at `http://localhost:8000/redoc`
 
+## Project Structure
+
+```
+ppsc-paper-bank/
+├── app/                    # Main application code
+│   ├── models/            # Database models
+│   ├── routes/            # API routes
+│   ├── services/          # Business logic
+│   └── utils/             # Utility functions
+├── tests/                 # Test files
+├── scripts/               # Utility scripts
+│   ├── utilities/         # General utilities (seed, flush, etc.)
+│   ├── check/             # Validation scripts
+│   ├── debug/             # Debugging scripts
+│   ├── verify/            # Verification scripts
+│   └── migration/         # Database migrations
+├── docs/                  # Documentation
+├── migrations/            # Database migration files
+└── main.py               # Application entry point
+```
+
 ## Seeding the Database
 
 To populate the database with sample MCQs:
 
 ```bash
-python seed.py
+python scripts/utilities/seed.py
 ```
 
 ## Running Tests
 
+Run all tests:
 ```bash
 pytest
 ```
+
+Run specific test:
+```bash
+pytest tests/test_mcq.py
+```
+
+See [tests/README.md](tests/README.md) for more testing information.
+
+## Utility Scripts
+
+The project includes various utility scripts organized in the `scripts/` directory:
+
+- **Utilities**: Database seeding, flushing, URL management
+- **Check**: Data validation and integrity checks
+- **Debug**: Troubleshooting and debugging tools
+- **Verify**: Data verification and consistency checks
+- **Migration**: Database schema migrations
+
+See [scripts/README.md](scripts/README.md) for detailed usage.
 
 ## API Endpoints
 
@@ -82,6 +123,21 @@ pytest
 - `GET /mcqs/{id}`: Get a specific MCQ
 - `PUT /mcqs/{id}`: Update a MCQ
 - `DELETE /mcqs/{id}`: Delete a MCQ
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+- Implementation guides
+- Feature documentation
+- System architecture
+- API usage guides
+
+See [docs/README.md](docs/README.md) for the complete documentation index.
+
+## Recent Updates
+
+See [RECENT_UPDATES.md](RECENT_UPDATES.md) for the latest API + AI changes (chat vs stream split, DB cached ai_explanation, roadmap endpoint, embedded agent service).
 
 ## Contributing
 

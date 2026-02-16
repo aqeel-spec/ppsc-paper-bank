@@ -3,7 +3,7 @@ from datetime import datetime
 import re
 
 from sqlmodel import SQLModel, Field, Relationship, Column, Session, select
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, String
 from sqlalchemy.sql import func
 
 if TYPE_CHECKING:
@@ -76,9 +76,9 @@ class Category(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     slug: str = Field(
-        index=True,
-        unique=True,
-        description="machine‐safe key, e.g. 'ppsc_all_mcqs_2025'"
+        max_length=255,
+        sa_column=Column(String(255), unique=True, index=True, nullable=False),
+        description="machine‐safe key, e.g. 'ppsc_all_mcqs_2025'",
     )
     name: str = Field(
         description="human‐readable, e.g. 'PPSC All MCQs 2025'"
@@ -139,6 +139,7 @@ class CategoryCreate(SQLModel):
     name: str = Field(description="human‐readable, e.g. 'PPSC All MCQs 2025'")
     slug: Optional[str] = Field(
         default=None, 
+        max_length=255,
         description="machine‐safe key (auto-generated if not provided)"
     )
     
@@ -153,7 +154,7 @@ class CategoryCreate(SQLModel):
 
 class CategoryUpdate(SQLModel):
     name: Optional[str] = Field(default=None, description="Updated name")
-    slug: Optional[str] = Field(default=None, description="Updated slug")
+    slug: Optional[str] = Field(default=None, max_length=255, description="Updated slug")
 
 
 class CategoryResponse(SQLModel):
@@ -206,7 +207,7 @@ class CategoryService:
     @staticmethod
     def get_category_by_slug(slug: str, session: Session) -> Optional[Category]:
         """
-        Get category by slug.
+        Get category by slug with MCQs loaded.
         """
         statement = select(Category).where(Category.slug == slug)
         return session.exec(statement).first()

@@ -35,7 +35,7 @@ def papers_list(
     # build a simple list of dicts for the template
     papers_ctx: List[dict] = []
     for p in papers:
-        mcqs = [ link.mcq for link in p.mcq_links ]
+        mcqs = [ link.mcq for link in p.paper_mcqs ]
         papers_ctx.append({
             "id":          p.id,
             "created_at":  p.created_at,
@@ -65,7 +65,7 @@ def paper_detail(
     if not p:
         raise HTTPException(404, f"Paper {paper_id} not found")
 
-    mcqs = [ link.mcq for link in p.mcq_links ]
+    mcqs = [ link.mcq for link in p.paper_mcqs ]
     # embed the full MCQs so your template can print them
     return templates.TemplateResponse("paper_detail.html", {
         "request":     request,
@@ -113,7 +113,7 @@ def all_papers_view(
     # 3) build contexts
     ctx = []
     for p in papers:
-        mcqs = [link.mcq for link in p.mcq_links]
+        mcqs = [link.mcq for link in p.paper_mcqs]
         ctx.append({
             "paper_id":   p.id,
             "created_at": p.created_at,

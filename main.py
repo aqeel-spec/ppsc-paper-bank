@@ -6,6 +6,11 @@ from app.routes.paper import router as paper_router
 from app.routes.scrape import router as scrape_router
 from app.routes.papers_view import router as papers_view_router
 from app.routes.category import router as category_router
+from app.routes.ai_chat import router as ai_chat_router
+from app.routes.agent_service import router as agent_service_router
+from app.routes.image_gen import router as image_gen_router
+from app.routes.bg_removal import router as bg_removal_router
+from app.routes.mock_interview import router as mock_interview_router
 from app.database import lifespan
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
@@ -48,8 +53,8 @@ def custom_openapi():
     )
     # THIS is what you need:
     schema["servers"] = [
-       {"url": "https://ppsc-paper-bank.vercel.app", "description": "Production server"}
-      #  {"url": "http://localhost:8000", "description": "Production server"}
+      #  {"url": "https://ppsc-paper-bank.vercel.app", "description": "Production server"}
+       {"url": "http://localhost:8000", "description": "Production server"}
     ]
     app.openapi_schema = schema
     return schema
@@ -123,6 +128,11 @@ app.include_router(paper_router, tags=["Papers"])
 app.include_router(scrape_router, tags=["Scraping"])
 app.include_router(papers_view_router, tags=["Papers View"])
 app.include_router(category_router, tags=["Categories"])
+app.include_router(ai_chat_router, tags=["AI"])
+app.include_router(agent_service_router, tags=["Agent"])
+app.include_router(image_gen_router, tags=["Image Generation"])
+app.include_router(bg_removal_router, tags=["Background Removal"])
+app.include_router(mock_interview_router, tags=["Mock Interview"])
 
 # -----------------------------------------------------------------------------
 # Make it runnable with `python main.py`

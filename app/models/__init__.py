@@ -18,9 +18,24 @@ from .mcqs_bank import (
 )
 from .paper import PaperModel, PaperMCQ, PaperCreate, PaperUpdate, PaperResponse
 from .website import Website, WebsiteCreate, WebsiteUpdate, WebsiteRead
+from .scraping_state import ScrapingState, ScrapingStatus
 from .websites import Websites, WebsitesCreate, WebsitesUpdate, WebsitesRead
 from .top_bar import TopBar, TopBarCreate, TopBarUpdate, TopBarRead
 from .side_bar import SideBar, SideBarCreate, SideBarUpdate, SideBarRead
+from .interview import (
+    InterviewSession,
+    InterviewMessage,
+    InterviewFeedback,
+    InterviewQuestionScore,
+    InterviewSessionRead,
+    InterviewMessageRead,
+    InterviewFeedbackRead,
+    InterviewQuestionScoreRead,
+    InterviewSessionDetail,
+    InterviewMode,
+    MessageRole,
+    SessionStatus,
+)
 
 __all__ = [
     # Base models
@@ -76,4 +91,18 @@ __all__ = [
     "SideBarCreate",
     "SideBarUpdate",
     "SideBarRead",
+
+    # Interview models
+    "InterviewSession",
+    "InterviewMessage",
+    "InterviewFeedback",
+    "InterviewQuestionScore",
+    "InterviewSessionRead",
+    "InterviewMessageRead",
+    "InterviewFeedbackRead",
+    "InterviewQuestionScoreRead",
+    "InterviewSessionDetail",
+    "InterviewMode",
+    "MessageRole",
+    "SessionStatus",
 ]

@@ -3,8 +3,8 @@ Category API Routes
 Handles CRUD operations for dynamic categories.
 """
 from typing import List
-from fastapi import APIRouter, HTTPException, Depends
-from sqlmodel import Session
+from fastapi import APIRouter, HTTPException, Depends, Query
+from sqlmodel import Session, select, func
 
 from ..database import get_session
 from ..models.category import (
@@ -43,15 +43,16 @@ def get_all_categories(session: Session = Depends(get_session)):
     return [CategoryResponse.model_validate(cat) for cat in categories]
 
 
-@router.get("/{category_id}", response_model=CategoryResponse)
+@router.get("/{slug}", response_model=CategoryResponse)
 def get_category_by_id(
-    category_id: int,
+    slug: str,
     session: Session = Depends(get_session)
 ):
     """
     Get a category by ID.
     """
-    category = CategoryService.get_category_by_id(category_id, session)
+    # category = CategoryService.get_category_by_id(category_id, session)
+    category = CategoryService.get_category_by_slug(slug, session)
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     return CategoryResponse.model_validate(category)
@@ -71,20 +72,133 @@ def get_category_by_slug(
     return CategoryResponse.model_validate(category)
 
 
-@router.get("/{category_id}/with-mcqs", response_model=CategoryWithMCQs)
-def get_category_with_mcqs(
-    category_id: int,
+@router.get("/{slug}/with-mcqs/{mcq_id}")
+def get_category_single_mcq(
+    slug: str,
+    mcq_id: int,
+    explanation: bool = False,
+    with_mcq: bool = True,
     session: Session = Depends(get_session)
 ):
     """
-    Get a category with all its MCQs.
+    Get a single MCQ from a category with optional filtering.
+    
+    Query Parameters:
+    - explanation: If True, include/focus on explanation
+    - with_mcq: If False with explanation=True, return only ID and explanation
+    
+    Examples:
+    - /{slug}/with-mcqs/{id} - Full MCQ details (default)
+    - /{slug}/with-mcqs/{id}?explanation=True - Full MCQ with explanation
+    - /{slug}/with-mcqs/{id}?explanation=True&with_mcq=False - Only ID and explanation
     """
-    category = CategoryService.get_category_by_id(category_id, session)
+    from ..models.mcq import MCQ
+    
+    # Get the MCQ and verify it belongs to this category
+    category = CategoryService.get_category_by_slug(slug, session)
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     
-    # Load the relationship
-    return CategoryWithMCQs.model_validate(category)
+    mcq = session.get(MCQ, mcq_id)
+    if not mcq:
+        raise HTTPException(status_code=404, detail="MCQ not found")
+    
+    if mcq.category_id != category.id:
+        raise HTTPException(status_code=404, detail="MCQ not found in this category")
+    
+    # Build response based on parameters
+    if explanation and not with_mcq:
+        # Return only ID and explanation
+        return {
+            "id": mcq.id,
+            "explanation": mcq.explanation
+        }
+    else:
+        # Return full MCQ
+        return mcq
+
+
+@router.get("/{slug}/with-mcqs")
+def get_category_with_mcqs(
+    slug: str,
+    explanation: bool = False,
+    with_mcq: bool = True,
+    limit: int = Query(default=10, ge=1, le=100, description="Number of MCQs to return"),
+    offset: int = Query(default=0, ge=0, description="Number of MCQs to skip"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get a category with its MCQs, with optional filtering and pagination.
+    
+    Query Parameters:
+    - explanation: If True, include/focus on explanations
+    - with_mcq: If False with explanation=True, return only ID and explanation for each MCQ
+    - limit: Maximum number of MCQs to return (default: 10, max: 100)
+    - offset: Number of MCQs to skip for pagination (default: 0)
+    
+    Examples:
+    - /{slug}/with-mcqs - First 10 MCQs with full details (default)
+    - /{slug}/with-mcqs?limit=20 - First 20 MCQs
+    - /{slug}/with-mcqs?limit=10&offset=10 - MCQs 11-20
+    - /{slug}/with-mcqs?explanation=True - Full MCQs (explanations included in model)
+    - /{slug}/with-mcqs?explanation=True&with_mcq=False - Only MCQ IDs and explanations
+    """
+    from sqlalchemy.orm import selectinload
+    from sqlmodel import select
+    from ..models.mcq import MCQ
+    
+    # Get category first
+    category = session.exec(select(Category).where(Category.slug == slug)).first()
+    
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    # Get total count of MCQs in this category
+    total_mcqs = session.exec(
+        select(func.count(MCQ.id)).where(MCQ.category_id == category.id)
+    ).one()
+    
+    # Get paginated MCQs
+    mcqs_query = (
+        select(MCQ)
+        .where(MCQ.category_id == category.id)
+        .order_by(MCQ.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    mcqs = session.exec(mcqs_query).all()
+    
+    # Build response based on parameters
+    if explanation and not with_mcq:
+        # Return only IDs and explanations for each MCQ
+        mcqs_minimal = [
+            {"id": mcq.id, "explanation": mcq.explanation}
+            for mcq in mcqs
+        ]
+        return {
+            "id": category.id,
+            "name": category.name,
+            "slug": category.slug,
+            "created_at": category.created_at,
+            "updated_at": category.updated_at,
+            "total_mcqs": total_mcqs,
+            "limit": limit,
+            "offset": offset,
+            "mcqs": mcqs_minimal
+        }
+    else:
+        # Return full category with paginated MCQ details (default)
+        return {
+            "id": category.id,
+            "name": category.name,
+            "slug": category.slug,
+            "created_at": category.created_at,
+            "updated_at": category.updated_at,
+            "total_mcqs": total_mcqs,
+            "limit": limit,
+            "offset": offset,
+            "mcqs": [mcq.model_dump() for mcq in mcqs]
+        }
 
 
 @router.put("/{category_id}", response_model=CategoryResponse)

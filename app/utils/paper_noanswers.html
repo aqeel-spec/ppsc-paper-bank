@@ -5,13 +5,15 @@
     <meta charset="UTF-8" />
     <title>Paper #{{ paper_id }} (Questions Only)</title>
 
-    <!-- load Noto Nastaliq Urdu from Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet" />
-
     <style>
+        @font-face {
+            font-family: "Noto Nastaliq Urdu";
+            src: url("/static/fonts/NotoNastaliqUrdu-Regular.ttf") format("truetype");
+        }
+
         /* apply the custom font and RTL direction */
         body {
-            font-family: 'Noto Nastaliq Urdu', serif;
+            font-family: "Noto Nastaliq Urdu", serif;
             direction: rtl;
             margin: 0.5cm;
             font-size: 12px;

@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 
 from sqlmodel import SQLModel, Field, Relationship, Column
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, Text
 from sqlalchemy.sql import func
 from pydantic import BaseModel, model_validator
 
@@ -19,13 +19,18 @@ class AnswerOption(str, Enum):
 
 
 class MCQBase(SQLModel):
-    question_text: str
-    option_a: str
-    option_b: str
-    option_c: str
-    option_d: str
+    question_text: str = Field(sa_column=Column(Text))
+    option_a: str = Field(sa_column=Column(Text))
+    option_b: str = Field(sa_column=Column(Text))
+    option_c: str = Field(sa_column=Column(Text))
+    option_d: str = Field(sa_column=Column(Text))
     correct_answer: AnswerOption
-    explanation: Optional[str] = None
+    explanation: Optional[str] = Field(default=None, sa_column=Column(Text))
+    ai_explanation: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text),
+        description="Cached AI-generated explanation (saved to avoid repeat token usage)",
+    )
 
 
 class MCQ(MCQBase, table=True):
@@ -109,6 +114,7 @@ class MCQRead(SQLModel):
     option_d: str
     correct_answer: AnswerOption
     explanation: Optional[str] = None
+    ai_explanation: Optional[str] = None
     category_id: int
     created_at: datetime
     updated_at: datetime

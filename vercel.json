@@ -4,6 +4,10 @@
         {
             "src": "main.py",
             "use": "@vercel/python"
+        },
+        {
+            "src": "agent_service.py",
+            "use": "@vercel/python"
         }
     ],
     "routes": [
@@ -13,6 +17,10 @@
             "headers": {
                 "cache-control": "public, max-age=31536000, immutable"
             }
+        },
+        {
+            "src": "/agent/(.*)",
+            "dest": "agent_service.py"
         },
         {
             "src": "/(.*)",

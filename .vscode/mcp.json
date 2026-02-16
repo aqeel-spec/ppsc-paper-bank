@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "ppsc-paper-bank": {
+      "type": "stdio",
+      "command": "poetry",
+      "args": ["run", "python", "mcp_server.py"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "API_BASE_URL": "http://127.0.0.1:8000"
+      }
+    }
+  }
+}
