@@ -398,7 +398,7 @@ class StructuredStartResponse(BaseModel):
     subject: Optional[str] = None
     questions_per_avatar: int
     total_questions: int
-    avatar_order: list[dict[str, str]]
+    avatar_order: list[dict[str, Any]]
     message: str
 
 
