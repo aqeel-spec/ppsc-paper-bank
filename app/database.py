@@ -360,6 +360,48 @@ if connection_string.startswith("mysql"):
 engine = create_engine(connection_string, **engine_kwargs)
 
 
+def ensure_interview_session_columns() -> None:
+    """Add structured-interview columns to interview_session if they are missing.
+
+    SQLModel.metadata.create_all() only creates *tables* that don't exist yet;
+    it never adds new columns to existing tables.  This helper fills the gap.
+    """
+    _new_cols = {
+        "questions_per_avatar": "INT NOT NULL DEFAULT 3",
+        "current_avatar_index": "INT NOT NULL DEFAULT 0",
+        "current_question_index": "INT NOT NULL DEFAULT 0",
+        "total_questions": "INT NOT NULL DEFAULT 12",
+        "overall_score": "FLOAT NULL",
+    }
+    try:
+        with engine.begin() as conn:
+            if engine.dialect.name in {"mysql", "mariadb"}:
+                for col, defn in _new_cols.items():
+                    try:
+                        conn.execute(text(
+                            f"ALTER TABLE interview_session ADD COLUMN {col} {defn}"
+                        ))
+                    except Exception:
+                        pass  # column already exists
+            elif engine.dialect.name == "sqlite":
+                for col, defn in _new_cols.items():
+                    try:
+                        conn.execute(text(
+                            f"ALTER TABLE interview_session ADD COLUMN {col} {defn}"
+                        ))
+                    except Exception:
+                        pass
+            elif engine.dialect.name == "mssql":
+                for col, defn in _new_cols.items():
+                    conn.execute(text(
+                        f"IF COL_LENGTH('dbo.interview_session','{col}') IS NULL "
+                        f"BEGIN ALTER TABLE dbo.interview_session ADD {col} {defn} END"
+                    ))
+    except Exception:
+        # Table may not exist at all yet — create_all will handle it.
+        pass
+
+
 def ensure_ai_explanation_column() -> None:
     # SQLModel's create_all doesn't add columns to existing tables.
     # Add the column with a best-effort ALTER for supported DBs.
@@ -400,6 +442,7 @@ def create_db_and_tables():
     try:
         SQLModel.metadata.create_all(engine)
         ensure_ai_explanation_column()
+        ensure_interview_session_columns()
     except SQLAlchemyError as exc:
         # SQL Server cannot create indexes on NVARCHAR(MAX). If the category table
         # was previously created with an unbounded slug column, fix it and retry.
@@ -498,6 +541,10 @@ async def lifespan(app: FastAPI):
         # Still ensure new columns exist for features that depend on them.
         try:
             ensure_ai_explanation_column()
+        except Exception:
+            pass
+        try:
+            ensure_interview_session_columns()
         except Exception:
             # Don't hard-fail production startup for a best-effort column add.
             pass
