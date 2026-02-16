@@ -24,10 +24,13 @@ from ppsc_agents.agent_system import (
     handle_api_error,
     search_internet,
     get_current_model,
-    paper_agent,
-    mcq_agent,
-    scraping_agent,
-    study_agent,
+    get_categories,
+    get_category_mcqs,
+    get_single_mcq,
+    create_paper,
+    get_papers,
+    get_paper_mcqs,
+    start_scraping,
 )
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -145,10 +148,13 @@ def _build_mcq_explainer_agent(*, use_internet: bool) -> Agent[None]:
 
 def _build_general_chat_agent(*, use_internet: bool) -> Agent[None]:
     tools: list[Tool] = cast(list[Tool], [
-        paper_agent.as_tool("paper_creator", "Create and manage custom practice papers/tests"),
-        mcq_agent.as_tool("mcq_assistant", "Browse MCQs and categories"),
-        scraping_agent.as_tool("scraping_agent", "Scrape MCQs from supported websites"),
-        study_agent.as_tool("study_assistant", "Study help and explanations"),
+        get_categories,
+        get_category_mcqs,
+        get_single_mcq,
+        create_paper,
+        get_papers,
+        get_paper_mcqs,
+        start_scraping,
         search_mcqs,
         get_mcq_by_id,
     ])
@@ -158,19 +164,9 @@ def _build_general_chat_agent(*, use_internet: bool) -> Agent[None]:
     return Agent(
         name="PPSC Chat",
         instructions=(
-            "You are the main chat assistant for the PPSC Paper Bank system.\n"
-            "You can: create papers, browse MCQs, search MCQs in the DB by keyword, explain questions, and start scraping.\n\n"
-            "Routing rules:\n"
-            "- Paper creation/management → use paper_creator tool\n"
-            "- Browse categories / get MCQs → use mcq_assistant tool\n"
-            "- Keyword search in the database → use search_mcqs tool\n"
-            "- Specific ID lookup → use get_mcq_by_id tool\n"
-            "- Scraping requests → use scraping_agent tool\n"
-            "- Study advice/plans → use study_assistant tool\n\n"
-            "Response rules:\n"
-            "- Be concise and practical.\n"
-            "- Use Markdown.\n"
-            "- If user asks for a list, return IDs + short titles.\n"
+            "You are the PPSC Paper Bank chat assistant.\n"
+            "Help users with MCQs, papers, scraping, and exam prep.\n"
+            "Use the provided tools to fetch data. Be concise and use Markdown.\n"
         ),
         model=get_current_model(),
         tools=tools,
@@ -274,6 +270,11 @@ async def chat_solve(payload: MCQChatSolveRequest, db: Session = Depends(get_ses
 
         msg = str(e)
         lowered = msg.lower()
+        if "too large" in lowered or "413" in lowered or "tokens_limit" in lowered:
+            raise HTTPException(
+                status_code=413,
+                detail="Request too large for the AI model. Try a shorter question.",
+            )
         if any(term in lowered for term in ["rate limit", "quota", "resource_exhausted", "insufficient_quota", "429"]):
             raise HTTPException(
                 status_code=429,

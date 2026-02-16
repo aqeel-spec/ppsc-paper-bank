@@ -15,7 +15,7 @@ def _get_github_models_config() -> Dict:
     """Build the single key config from GitHub Models env vars."""
     token = (os.getenv("GITHUB_TOKEN") or "").strip()
     endpoint = (os.getenv("GITHUB_MODELS_ENDPOINT") or "https://models.github.ai/inference").strip()
-    model = (os.getenv("MODEL") or "openai/gpt-4.1").strip()
+    model = (os.getenv("MODEL") or "openai/gpt-4.1-mini").strip()
 
     return {
         "provider": "github",

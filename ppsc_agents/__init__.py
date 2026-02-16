@@ -3,10 +3,6 @@ PPSC Paper Bank Agent System
 """
 
 from ppsc_agents.agent_system import (
-    mcq_agent,
-    scraping_agent,
-    study_agent,
-    paper_agent,
     orchestrator,
     run_agent,
     run_orchestrator,
@@ -19,14 +15,13 @@ from ppsc_agents.agent_system import (
     get_papers,
     get_paper_mcqs,
     search_internet,
-    start_scraping
+    start_scraping,
+    handle_api_error,
+    get_current_model,
+    SESSION_DB,
 )
 
 __all__ = [
-    "mcq_agent",
-    "scraping_agent",
-    "study_agent",
-    "paper_agent",
     "orchestrator",
     "run_agent",
     "run_orchestrator",
@@ -39,5 +34,8 @@ __all__ = [
     "get_papers",
     "get_paper_mcqs",
     "search_internet",
-    "start_scraping"
+    "start_scraping",
+    "handle_api_error",
+    "get_current_model",
+    "SESSION_DB",
 ]

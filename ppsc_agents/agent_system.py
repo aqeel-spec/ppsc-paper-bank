@@ -497,96 +497,26 @@ async def start_scraping(
 
 # ==================== Create Agents ====================
 
-paper_agent = Agent(
-    name="Paper Creator",
-    instructions="""You are an intelligent paper/test creator and manager for PPSC Paper Bank.
-    
-    Your responsibilities:
-    1. Create custom papers based on user requirements (difficulty, topic, question count)
-    2. List and manage existing papers
-    3. Help users find appropriate papers for practice
-    4. Provide information about paper contents
-    5. Search the internet for topic information when needed
-    
-    When creating papers:
-    - Ask about difficulty level (easy/medium/hard) if not specified
-    - Confirm question count (default: 20)
-    - Select appropriate category/topic
-    - Use search_internet for topic research if needed
-    
-    Always be helpful and guide users through the paper creation process.
-    """,
-    model=github_model,
-    tools=[create_paper, get_papers, get_paper_mcqs, search_internet, get_categories]
-)
-
-mcq_agent = Agent(
-    name="MCQ Assistant",
-    instructions="""You are an intelligent MCQ assistant for PPSC Paper Bank.
-    
-    Your responsibilities:
-    1. Help users browse and search through MCQ categories
-    2. Retrieve specific MCQs with detailed information
-    3. Show MCQs from particular categories
-    4. Provide explanations when requested
-    
-    Always format MCQs clearly with question, options, and answer.
-    """,
-    model=github_model,
-    tools=[get_categories, get_category_mcqs, get_single_mcq]
-)
-
-scraping_agent = Agent(
-    name="Scraping Agent",
-    instructions="""You are a web scraping assistant for PPSC Paper Bank.
-    
-    Your responsibilities:
-    1. Help users add new MCQs from supported websites
-    2. Support websites: testpoint, pakmcqs, pacegkacademy
-    3. Guide users through the scraping process
-    
-    Always confirm the website, URL, and category before starting.
-    """,
-    model=github_model,
-    tools=[start_scraping]
-)
-
-study_agent = Agent(
-    name="Study Assistant",
-    instructions="""You are a helpful study assistant for exam preparation.
-    
-    Your responsibilities:
-    1. Help students learn from MCQs
-    2. Provide detailed explanations
-    3. Create study plans
-    4. Offer exam preparation tips
-    
-    Always be encouraging and educational.
-    """,
-    model=github_model,
-    tools=[get_single_mcq, get_category_mcqs]
-)
-
-# Create orchestrator that routes to specialized agents
+# Single unified agent with all tools (avoids nested-agent serialisation
+# that easily exceeds GitHub Models' per-request token limit).
 orchestrator = Agent(
-    name="Orchestrator",
-    instructions="""You are an intelligent orchestrator for PPSC Paper Bank system.
-    
-    Route user requests to the appropriate specialized agent:
-    - Paper Creator: For creating custom papers/tests, managing papers, searching topics
-    - MCQ Assistant: For browsing MCQs, getting questions, exploring categories
-    - Scraping Agent: For adding new content from websites (testpoint, pakmcqs, pacegkacademy)
-    - Study Agent: For exam preparation, learning assistance, explanations
-    
-    Always analyze the user's intent and delegate to the most appropriate agent.
-    """,
+    name="PPSC Assistant",
+    instructions=(
+        "You are the PPSC Paper Bank assistant. "
+        "Help users with MCQs, papers, scraping, and exam prep. "
+        "Use the provided tools to fetch data. Be concise and helpful."
+    ),
     model=github_model,
     tools=[
-        paper_agent.as_tool("paper_creator", "Create and manage custom practice papers/tests"),
-        mcq_agent.as_tool("mcq_assistant", "Browse and search MCQ questions and categories"),
-        scraping_agent.as_tool("scraping_agent", "Add new content from supported websites"),
-        study_agent.as_tool("study_assistant", "Get exam preparation help and explanations")
-    ]
+        get_categories,
+        get_category_mcqs,
+        get_single_mcq,
+        create_paper,
+        get_papers,
+        get_paper_mcqs,
+        search_internet,
+        start_scraping,
+    ],
 )
 
 
@@ -619,6 +549,14 @@ async def run_agent(
         logger.info("✓ Agent request completed successfully")
         return result.final_output
     except Exception as e:
+        # Catch token-limit / 413 errors and return a friendly message
+        err_str = str(e).lower()
+        if "too large" in err_str or "413" in err_str or "tokens_limit" in err_str:
+            logger.warning("⚠️ Request exceeded token limit — returning fallback")
+            return (
+                "Sorry, that request was too large for the AI model. "
+                "Please try a shorter or simpler question."
+            )
         handle_api_error(e)
         raise
 
@@ -648,6 +586,13 @@ async def run_orchestrator(
         logger.info("✓ Orchestrator request completed successfully")
         return result.final_output
     except Exception as e:
+        err_str = str(e).lower()
+        if "too large" in err_str or "413" in err_str or "tokens_limit" in err_str:
+            logger.warning("⚠️ Request exceeded token limit — returning fallback")
+            return (
+                "Sorry, that request was too large for the AI model. "
+                "Please try a shorter or simpler question."
+            )
         handle_api_error(e)
         raise
 
@@ -709,8 +654,7 @@ async def test_agent():
     # Test 3: Internet search
     print("\n3. Testing internet search...")
     print("-" * 60)
-    response = await run_agent(
-        paper_agent,
+    response = await run_orchestrator(
         "Search for information about PPSC exam preparation tips",
         session_id=session_id
     )
