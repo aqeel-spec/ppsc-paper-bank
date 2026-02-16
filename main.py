@@ -53,8 +53,8 @@ def custom_openapi():
     )
     # THIS is what you need:
     schema["servers"] = [
-      #  {"url": "https://ppsc-paper-bank.vercel.app", "description": "Production server"}
-       {"url": "http://localhost:8000", "description": "Production server"}
+        {"url": "https://ppsc-fch0dgdve9brg0dg.southeastasia-01.azurewebsites.net", "description": "Azure Production"},
+        {"url": "http://localhost:8000", "description": "Local development"},
     ]
     app.openapi_schema = schema
     return schema
