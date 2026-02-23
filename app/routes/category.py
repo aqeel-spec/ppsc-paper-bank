@@ -113,7 +113,7 @@ def get_all_categories(
     )
 
 
-@router.get("/{slug}/subcategories", response_model=PaginatedResponse[CategoryResponse], response_model_exclude_none=True)
+@router.get("/{slug:path}/subcategories", response_model=PaginatedResponse[CategoryResponse], response_model_exclude_none=True)
 def get_subcategories(
     slug: str,
     page: int = Query(default=1, ge=1, description="Page number"),
@@ -154,53 +154,7 @@ def get_subcategories(
     )
 
 
-@router.get("/{slug}", response_model=PaginatedResponse[CategoryHierarchyResponse], response_model_exclude_none=True)
-def get_category_by_id(
-    slug: str,
-    page: int = Query(default=1, ge=1, description="Page number"),
-    limit: int = Query(default=10, ge=1, le=100, description="Items per page"),
-    session: Session = Depends(get_session)
-):
-    """
-    Get a category by ID (slug), including its hierarchical paginated subcategories by default.
-    """
-    category = CategoryService.get_category_by_slug(slug, session)
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
-        
-    # Get all direct subcategories for this exact parent
-    prefix = f"{category.name}/"
-    statement = select(Category).where(Category.name.startswith(prefix))
-    subcategories = session.exec(statement).all()
-    
-    total_items = len(subcategories)
-    total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
-    
-    offset = (page - 1) * limit
-    paginated_subs = [CategoryHierarchyResponse.model_validate(sub) for sub in subcategories[offset:offset + limit]]
-    
-    # Strip nested arrays from these subcategories so the tree doesn't recurse infinitely
-    for sub in paginated_subs:
-        sub.subcategories = None
-        
-    root_val = CategoryHierarchyResponse.model_validate(category)
-    root_val.subcategories = paginated_subs
-
-    # In this specific endpoint, 'total_items' reflects the count of subcategories,
-    # but the returned data object is the parent category itself.
-    return PaginatedResponse(
-        message="success",
-        data=[root_val],
-        page=page,
-        limit=limit,
-        total_pages=total_pages,
-        total_items=total_items,
-        has_next=page < total_pages,
-        has_previous=page > 1
-    )
-
-
-@router.get("/slug/{slug}", response_model=CategoryResponse)
+@router.get("/slug/{slug:path}", response_model=CategoryResponse)
 def get_category_by_slug(
     slug: str,
     session: Session = Depends(get_session)
@@ -214,7 +168,7 @@ def get_category_by_slug(
     return CategoryResponse.model_validate(category)
 
 
-@router.get("/{slug}/with-mcqs/{mcq_id}")
+@router.get("/{slug:path}/with-mcqs/{mcq_id}")
 def get_category_single_mcq(
     slug: str,
     mcq_id: int,
@@ -260,7 +214,7 @@ def get_category_single_mcq(
         return mcq
 
 
-@router.get("/{slug}/with-mcqs")
+@router.get("/{slug:path}/with-mcqs")
 def get_category_with_mcqs(
     slug: str,
     explanation: bool = False,
@@ -381,7 +335,7 @@ def get_all_slugs(session: Session = Depends(get_session)):
     return CategorySlugManager.get_all_slugs(session)
 
 
-@router.get("/validate-slug/{slug}")
+@router.get("/validate-slug/{slug:path}")
 def validate_slug(slug: str, session: Session = Depends(get_session)):
     """
     Check if a slug is valid (exists in database).
@@ -393,3 +347,49 @@ def validate_slug(slug: str, session: Session = Depends(get_session)):
         "is_valid": is_valid,
         "message": f"Slug '{slug}' {'exists' if is_valid else 'does not exist'} in database"
     }
+
+
+@router.get("/{slug:path}", response_model=PaginatedResponse[CategoryHierarchyResponse], response_model_exclude_none=True)
+def get_category_by_id(
+    slug: str,
+    page: int = Query(default=1, ge=1, description="Page number"),
+    limit: int = Query(default=10, ge=1, le=100, description="Items per page"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get a category by ID (slug), including its hierarchical paginated subcategories by default.
+    """
+    category = CategoryService.get_category_by_slug(slug, session)
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+        
+    # Get all direct subcategories for this exact parent
+    prefix = f"{category.name}/"
+    statement = select(Category).where(Category.name.startswith(prefix))
+    subcategories = session.exec(statement).all()
+    
+    total_items = len(subcategories)
+    total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
+    
+    offset = (page - 1) * limit
+    paginated_subs = [CategoryHierarchyResponse.model_validate(sub) for sub in subcategories[offset:offset + limit]]
+    
+    # Strip nested arrays from these subcategories so the tree doesn't recurse infinitely
+    for sub in paginated_subs:
+        sub.subcategories = None
+        
+    root_val = CategoryHierarchyResponse.model_validate(category)
+    root_val.subcategories = paginated_subs
+
+    # In this specific endpoint, 'total_items' reflects the count of subcategories,
+    # but the returned data object is the parent category itself.
+    return PaginatedResponse(
+        message="success",
+        data=[root_val],
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        total_items=total_items,
+        has_next=page < total_pages,
+        has_previous=page > 1
+    )
