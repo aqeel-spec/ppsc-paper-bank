@@ -1,24 +1,15 @@
-import socket
-import sys
+import logging
+import asyncio
+from app.database import engine
 
-def check_host(host, port=3306):
-    try:
-        ip = socket.gethostbyname(host)
-        print(f"Host '{host}' resolves to IP: {ip}")
-    except socket.gaierror:
-        print(f"Host '{host}' could NOT be resolved.")
-        return
+logging.basicConfig(level=logging.INFO)
 
+def test_db():
     try:
-        print(f"Attempting to connect to {host}:{port}...")
-        with socket.create_connection((host, port), timeout=5):
-            print(f"SUCCESS: Port {port} on {host} is reachable!")
+        with engine.connect() as conn:
+            print("Successfully connected to the PostgreSQL database!")
     except Exception as e:
-        print(f"FAILED: Could not connect to {host}:{port}. Error: {e}")
+        print(f"Failed to connect: {e}")
 
 if __name__ == "__main__":
-    check_host("pppc.mysql.database.azure.com")
-    print("-" * 40)
-    check_host("ppsc.mysql.database.azure.com")
-    print("-" * 40)
-    check_host("ppsc-paper-bank.mysql.database.azure.com")
+    test_db()

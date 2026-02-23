@@ -360,12 +360,9 @@ if connection_string.startswith("mysql"):
 engine = create_engine(connection_string, **engine_kwargs)
 
 
-def ensure_interview_session_columns() -> None:
-    """Add structured-interview columns to interview_session if they are missing.
 
-    SQLModel.metadata.create_all() only creates *tables* that don't exist yet;
-    it never adds new columns to existing tables.  This helper fills the gap.
-    """
+def ensure_interview_session_columns() -> None:
+    """Add structured-interview columns to interview_session if they are missing."""
     _new_cols = {
         "questions_per_avatar": "INT NOT NULL DEFAULT 3",
         "current_avatar_index": "INT NOT NULL DEFAULT 0",
@@ -378,17 +375,13 @@ def ensure_interview_session_columns() -> None:
             if engine.dialect.name in {"mysql", "mariadb"}:
                 for col, defn in _new_cols.items():
                     try:
-                        conn.execute(text(
-                            f"ALTER TABLE interview_session ADD COLUMN {col} {defn}"
-                        ))
+                        conn.execute(text(f"ALTER TABLE interview_session ADD COLUMN {col} {defn}"))
                     except Exception:
-                        pass  # column already exists
-            elif engine.dialect.name == "sqlite":
+                        pass
+            elif engine.dialect.name in {"sqlite", "postgresql"}:
                 for col, defn in _new_cols.items():
                     try:
-                        conn.execute(text(
-                            f"ALTER TABLE interview_session ADD COLUMN {col} {defn}"
-                        ))
+                        conn.execute(text(f"ALTER TABLE interview_session ADD COLUMN {col} {defn}"))
                     except Exception:
                         pass
             elif engine.dialect.name == "mssql":
@@ -398,7 +391,6 @@ def ensure_interview_session_columns() -> None:
                         f"BEGIN ALTER TABLE dbo.interview_session ADD {col} {defn} END"
                     ))
     except Exception:
-        # Table may not exist at all yet — create_all will handle it.
         pass
 
 
@@ -414,13 +406,11 @@ def ensure_ai_explanation_column() -> None:
                 )
             )
         elif engine.dialect.name in {"mysql", "mariadb"}:
-            # MySQL: ignore if already exists.
             try:
                 conn.execute(text("ALTER TABLE mcqs_bank ADD COLUMN ai_explanation LONGTEXT NULL"))
             except Exception:
                 pass
-        elif engine.dialect.name == "sqlite":
-            # SQLite: ignore if already exists.
+        elif engine.dialect.name in {"sqlite", "postgresql"}:
             try:
                 conn.execute(text("ALTER TABLE mcqs_bank ADD COLUMN ai_explanation TEXT"))
             except Exception:
