@@ -168,6 +168,26 @@ class CategoryResponse(SQLModel):
         from_attributes = True
 
 
+from pydantic import BaseModel
+from typing import TypeVar, Generic
+
+T = TypeVar('T')
+
+class CategoryHierarchyResponse(CategoryResponse):
+    subcategories: Optional[list["CategoryHierarchyResponse"]] = None
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    message: str = "success"
+    data: list[T]
+    page: int
+    limit: int
+    total_pages: int
+    total_items: int
+    has_next: bool
+    has_previous: bool
+
+
 class CategoryWithMCQs(CategoryResponse):
     mcqs: list = []  # Will be populated with MCQ objects
 
