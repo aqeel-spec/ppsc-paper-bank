@@ -31,7 +31,8 @@ from enum import Enum
 from typing import Any, AsyncIterator, List, Optional, cast
 
 import async_timeout
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select, col
@@ -52,17 +53,38 @@ from app.models.interview import (
     InterviewMode,
     MessageRole,
     SessionStatus,
+    InterviewBehaviorLog,
 )
+from litellm import completion
 from ppsc_agents.agent_system import (
     SESSION_DB,
     get_current_model,
+    get_memory_session,
     handle_api_error,
     search_internet,
 )
 
+import os
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/interview", tags=["Mock Interview"])
+MAX_MEMORY_MESSAGES = int(os.getenv("MAX_MEMORY_MESSAGES", "40"))
+
+
+def _is_token_limit_error(exc: Exception) -> bool:
+    """Return True when the exception signals the request body is too large."""
+    s = str(exc).lower()
+    return (
+        "too large" in s
+        or "413" in s
+        or "tokens_limit" in s
+        or "max size" in s
+        or "request body" in s
+    )
+
+
+class _TokenLimitRetry(Exception):
+    """Internal sentinel: streaming hit a token-limit error; retry without session."""
 
 
 # ── Avatar definitions ─────────────────────────────────────────────────────
@@ -170,9 +192,13 @@ def _panel_system_prompt(subject: str | None = None) -> str:
         "- After each candidate answer, the current panelist gives brief feedback.\n"
         "- After all panelists finish, you (the Chairperson) provide a consolidated score card.\n"
         "- Score card format: table with panelist name, area, score out of 10, and remarks.\n"
-        "- Ask ONE question at a time, wait for the candidate's response.\n"
         "- Be professional, encouraging, and realistic.\n"
-        "- Use Markdown formatting.\n"
+        "- Use Markdown formatting.\n\n"
+        "CRITICAL INSTRUCTIONS FOR ONE-BY-ONE CONVERSATION:\n"
+        "1. ONLY ONE PERSON MAY SPEAK PER TURN. Choose exactly one panelist whose turn it is.\n"
+        "2. That single panelist will give brief feedback on the last answer (if any) and ask ONE question.\n"
+        "3. Once the single panelist asks their question, STOP generating text entirely. Wait for the candidate's response before the next panelist speaks.\n"
+        "4. DO NOT write questions or dialogue for multiple panelists in the same output block.\n"
     )
 
 
@@ -259,6 +285,7 @@ def _structured_final_report_prompt(
     scores_by_avatar: dict[str, list[dict]],
     candidate_name: str | None = None,
     subject: str | None = None,
+    behavioral_notes: str | None = None,
 ) -> str:
     """Build a prompt for the final consolidated interview report."""
     name = candidate_name or "The candidate"
@@ -282,6 +309,10 @@ def _structured_final_report_prompt(
 
     all_scores = "\n\n".join(score_sections)
 
+    vision_context = (
+        f"\n\n### Psychological Expert (Vision) Notes on Body Language:\n- {behavioral_notes}\n"
+    ) if behavioral_notes else ""
+
     return (
         "You are a senior PPSC interview performance analyst.\n"
         f"Candidate: **{name}** | Subject: **{subj}**\n\n"
@@ -289,6 +320,7 @@ def _structured_final_report_prompt(
         f"{all_scores}\n\n"
         "---\n\n"
         "Produce a comprehensive **Final Interview Report** in Markdown with:\n\n"
+        f"{vision_context}"
         "## Overall Score\n"
         "Compute a weighted overall score out of 100 (average of all question scores) "
         "and give a one-line verdict (Outstanding / Very Good / Good / Needs Improvement / Poor).\n\n"
@@ -605,7 +637,10 @@ async def start_interview(
     payload: InterviewStartRequest,
     db: Session = Depends(get_session),
 ):
-    session_id = payload.session_id or f"interview_{uuid.uuid4().hex[:12]}"
+    # Always generate a fresh session_id for a new interview.  Never reuse a
+    # client-supplied ID (e.g. 'anon:unknown') because that would replay stale
+    # history from a completely different conversation into the LLM context.
+    session_id = f"interview_{uuid.uuid4().hex[:12]}"
     meta = _AVATAR_META[payload.avatar]
 
     # ── DB: create session row ──
@@ -619,22 +654,41 @@ async def start_interview(
     )
 
     agent = _build_interview_agent(payload.avatar, payload.subject)
+    
+    logger.info(f"🧠 Built interview agent for avatar agent :  {payload.avatar.value} with model {agent.model}")
 
     name_part = f" The candidate's name is {payload.candidate_name}." if payload.candidate_name else ""
     subject_part = f" Subject: {payload.subject}." if payload.subject else ""
+    
     opening = (
         f"Start the interview.{name_part}{subject_part} "
         "Introduce yourself briefly and ask the first question."
     )
+    
 
-    llm_session = SQLiteSession(session_id, SESSION_DB)
+    # /start always runs without prior LLM memory — this IS the start of the
+    # conversation.  Subsequent /chat calls will use get_memory_session() to
+    # replay only the turns that belong to this session.
+    llm_session = None
+    logger.info(f"🆕 New interview session={session_id}, avatar={payload.avatar.value}")
 
     try:
         result = await Runner.run(agent, opening, session=llm_session)
         logger.info(f"🎙️ Interview started — session={session_id}, avatar={payload.avatar.value}")
     except Exception as e:
-        handle_api_error(e)
-        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
+        if _is_token_limit_error(e) and llm_session is not None:
+            logger.warning(
+                f"⚠️ Token limit exceeded on /start (session={session_id}); retrying without memory."
+            )
+            try:
+                result = await Runner.run(agent, opening, session=None)
+                logger.info(f"🎙️ Interview started (no-memory fallback) — session={session_id}")
+            except Exception as e2:
+                handle_api_error(e2)
+                raise HTTPException(status_code=502, detail=f"LLM error: {str(e2)[:200]}")
+        else:
+            handle_api_error(e)
+            raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
 
     # ── DB: log system opening + interviewer response ──
     _log_message(db, db_session, MessageRole.system.value, opening)
@@ -667,14 +721,32 @@ async def interview_chat(
     )
 
     agent = _build_interview_agent(payload.avatar, payload.subject)
-    llm_session = SQLiteSession(payload.session_id, SESSION_DB)
+    # Limit memory forwarded to the LLM based on DB message count
+    if getattr(db_session, "total_messages", 0) <= MAX_MEMORY_MESSAGES:
+        llm_session = get_memory_session(payload.session_id)
+    else:
+        logger.warning(
+            f"Session {payload.session_id} has {db_session.total_messages} messages; skipping memory to avoid token overflow"
+        )
+        llm_session = None
 
     try:
         result = await Runner.run(agent, payload.message, session=llm_session)
         logger.info(f"💬 Interview chat — session={payload.session_id}")
     except Exception as e:
-        handle_api_error(e)
-        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
+        if _is_token_limit_error(e) and llm_session is not None:
+            logger.warning(
+                f"⚠️ Token limit exceeded on /chat (session={payload.session_id}); retrying without memory."
+            )
+            try:
+                result = await Runner.run(agent, payload.message, session=None)
+                logger.info(f"💬 Interview chat (no-memory fallback) — session={payload.session_id}")
+            except Exception as e2:
+                handle_api_error(e2)
+                raise HTTPException(status_code=502, detail=f"LLM error: {str(e2)[:200]}")
+        else:
+            handle_api_error(e)
+            raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
 
     # ── DB: log candidate message + interviewer response ──
     _log_message(db, db_session, MessageRole.candidate.value, payload.message)
@@ -714,7 +786,14 @@ async def interview_chat_stream(
     _log_message(db, db_session, MessageRole.candidate.value, payload.message)
 
     agent = _build_interview_agent(payload.avatar, payload.subject)
-    llm_session = SQLiteSession(payload.session_id, SESSION_DB)
+    # Limit memory forwarded to the LLM based on DB message count
+    if getattr(db_session, "total_messages", 0) <= MAX_MEMORY_MESSAGES:
+        llm_session = get_memory_session(payload.session_id)
+    else:
+        logger.warning(
+            f"Session {payload.session_id} has {db_session.total_messages} messages; skipping memory to avoid token overflow"
+        )
+        llm_session = None
 
     async def gen() -> AsyncIterator[str]:
         yield _sse("meta", {
@@ -726,40 +805,56 @@ async def interview_chat_stream(
 
         collected_output = ""
 
+        async def _run_streamed_with_fallback(session_arg):
+            """Run streamed; on token-limit error retry without session."""
+            nonlocal collected_output
+            try:
+                streamed = Runner.run_streamed(agent, payload.message, session=session_arg)
+                async with async_timeout.timeout(120):
+                    async for event in streamed.stream_events():
+                        if getattr(event, "type", None) == "raw_response_event":
+                            data = getattr(event, "data", None)
+                            if data:
+                                try:
+                                    payload_dict = data.model_dump()
+                                except Exception:
+                                    payload_dict = data if isinstance(data, dict) else {}
+                                delta = payload_dict.get("delta")
+                                if isinstance(delta, str) and delta:
+                                    collected_output += delta
+                                    yield _sse("delta", {"delta": delta})
+                final = streamed.final_output or collected_output
+                yield _sse("done", {"output": final})
+                if final:
+                    _log_message(
+                        db, db_session,
+                        MessageRole.interviewer.value,
+                        final,
+                        avatar=payload.avatar.value,
+                    )
+            except asyncio.TimeoutError:
+                yield _sse("error", {"message": "Interview response timed out."})
+            except Exception as exc:
+                if _is_token_limit_error(exc) and session_arg is not None:
+                    logger.warning(
+                        f"⚠️ Token limit exceeded on /chat/stream (session={payload.session_id}); retrying without memory."
+                    )
+                    # Retry without memory — re-raise so outer loop handles it
+                    raise _TokenLimitRetry() from exc
+                handle_api_error(exc)
+                yield _sse("error", {"message": str(exc)[:300]})
+
         try:
-            streamed = Runner.run_streamed(agent, payload.message, session=llm_session)
-
-            async with async_timeout.timeout(120):
-                async for event in streamed.stream_events():
-                    if getattr(event, "type", None) == "raw_response_event":
-                        data = getattr(event, "data", None)
-                        if data:
-                            try:
-                                payload_dict = data.model_dump()
-                            except Exception:
-                                payload_dict = data if isinstance(data, dict) else {}
-                            delta = payload_dict.get("delta")
-                            if isinstance(delta, str) and delta:
-                                collected_output += delta
-                                yield _sse("delta", {"delta": delta})
-
-            final = streamed.final_output or collected_output
-            yield _sse("done", {"output": final})
-
-            # ── DB: log interviewer response ──
-            if final:
-                _log_message(
-                    db, db_session,
-                    MessageRole.interviewer.value,
-                    final,
-                    avatar=payload.avatar.value,
-                )
-
-        except asyncio.TimeoutError:
-            yield _sse("error", {"message": "Interview response timed out."})
-        except Exception as e:
-            handle_api_error(e)
-            yield _sse("error", {"message": str(e)[:300]})
+            async for chunk in _run_streamed_with_fallback(llm_session):
+                yield chunk
+        except _TokenLimitRetry:
+            collected_output = ""
+            try:
+                async for chunk in _run_streamed_with_fallback(None):
+                    yield chunk
+            except Exception as e2:
+                handle_api_error(e2)
+                yield _sse("error", {"message": str(e2)[:300]})
 
     return StreamingResponse(
         gen(),
@@ -788,7 +883,14 @@ async def panel_interview(
     )
 
     agent = _build_panel_agent(payload.subject)
-    llm_session = SQLiteSession(session_id, SESSION_DB)
+    # Limit memory usage for panel interviews
+    if getattr(db_session, "total_messages", 0) <= MAX_MEMORY_MESSAGES:
+        llm_session = SQLiteSession(session_id, SESSION_DB)
+    else:
+        logger.warning(
+            f"Session {session_id} has {db_session.total_messages} messages; skipping memory to avoid token overflow"
+        )
+        llm_session = None
 
     msg = payload.message
     if not payload.session_id:
@@ -827,8 +929,14 @@ async def get_feedback(
     payload: FeedbackRequest,
     db: Session = Depends(get_session),
 ):
-    llm_session = SQLiteSession(payload.session_id, SESSION_DB)
-    items = await llm_session.get_items()
+    # Use the same memory backend as the chat endpoints (honours USE_DB_MEMORY flag)
+    mem_session = get_memory_session(payload.session_id)
+    if mem_session is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No session found for '{payload.session_id}'.",
+        )
+    items = await mem_session.get_items()
 
     if not items:
         raise HTTPException(
@@ -836,12 +944,23 @@ async def get_feedback(
             detail=f"No conversation found for session '{payload.session_id}'.",
         )
 
-    # Build transcript from session history
+    # If transcript is very long, trim to the most recent messages to avoid oversized prompts
+    if len(items) > MAX_MEMORY_MESSAGES:
+        logger.warning(
+            f"Feedback request for session {payload.session_id} contains {len(items)} messages; trimming to last {MAX_MEMORY_MESSAGES} messages"
+        )
+        items = items[-MAX_MEMORY_MESSAGES:]
+
+    # Build transcript — items may be dicts (DBSessionAdapter) or objects (SQLiteSession)
     transcript_lines: list[str] = []
     for item in items:
-        entry: Any = item
-        role: str = getattr(entry, "role", "unknown")
-        raw: Any = getattr(entry, "content", None)
+        # Support both dict format and attribute-based format
+        if isinstance(item, dict):
+            role = item.get("role", "unknown")
+            raw = item.get("content", None)
+        else:
+            role = getattr(item, "role", "unknown")
+            raw = getattr(item, "content", None)
         if raw is None:
             continue
         if isinstance(raw, str):
@@ -856,11 +975,31 @@ async def get_feedback(
         if content:
             transcript_lines.append(f"**{role}**: {content}")
 
+
     transcript = "\n\n".join(transcript_lines)
+    
+    # Fetch behavioral notes from DB
+    behavioral_logs = db.exec(
+        select(InterviewBehaviorLog)
+        .where(InterviewBehaviorLog.session_id == payload.session_id)
+        .order_by(col(InterviewBehaviorLog.created_at).desc())
+        .limit(15)
+    ).all()
+    # Reverse to chronological order
+    behavioral_logs.reverse()
+    
+    combined_notes = "\n- ".join([log.observation_text for log in behavioral_logs])
+    vision_context = (
+        f"\n\n### Psychological Expert (Vision) Notes on Body Language:\n- {combined_notes}\n\n"
+        "Make sure to specifically comment on their posture, eye contact, and confidence in the "
+        "'Strengths' or 'Areas for Improvement' sections based on these vision notes."
+    ) if combined_notes else ""
+
     prompt = (
+        "You are an interview performance analyst.\n"
         "Here is the full transcript of a PPSC mock interview session.\n"
         "Analyze the candidate's performance and produce a detailed feedback report.\n\n"
-        f"---\n\n{transcript}\n\n---"
+        f"---\n\n{transcript}\n\n---{vision_context}"
     )
 
     agent = _build_feedback_agent()
@@ -1423,11 +1562,23 @@ async def structured_finish_interview(
     # Overall score (simple mean)
     overall = round(sum(all_raw_scores) / len(all_raw_scores), 1) if all_raw_scores else 0.0
 
+    # Fetch behavioral notes from DB
+    behavioral_logs = db.exec(
+        select(InterviewBehaviorLog)
+        .where(InterviewBehaviorLog.session_id == session_id)
+        .order_by(col(InterviewBehaviorLog.created_at).desc())
+        .limit(15)
+    ).all()
+    # Reverse to chronological order
+    behavioral_logs.reverse()
+    combined_notes = "\n- ".join([log.observation_text for log in behavioral_logs])
+
     # Generate detailed AI report
     report_prompt = _structured_final_report_prompt(
         scores_by_avatar=scores_by_avatar,
         candidate_name=db_session.candidate_name,
         subject=db_session.subject,
+        behavioral_notes=combined_notes if combined_notes else None,
     )
 
     agent = Agent(
@@ -1481,3 +1632,84 @@ async def structured_finish_interview(
         detailed_report=detailed_report,
         question_scores=question_scores_out,
     )
+
+
+# ── WS /ws/video-stream/{session_id} ───────────────────────────────────────
+
+PSYCHOLOGIST_PROMPT = """You are Ms. Fatima Noor, a highly trained PPSC Behavioral & Psychological Expert.
+Analyze the provided images of the candidate during their interview response.
+Note everything:
+1. Eye contact (Are they looking at the camera/panel?)
+2. Posture (Slouching, confident, rigid?)
+3. Nervousness (Fidgeting, touching face, sweating?)
+4. Professional appearance.
+
+Provide a concise, 1-2 sentence behavioral summary of what you observe in this timeframe. Be objective.
+Format: 'Behavior: [Your observation]'.
+"""
+
+@router.websocket("/ws/video-stream/{session_id}")
+async def video_analysis_endpoint(
+    websocket: WebSocket,
+    session_id: str,
+):
+    await websocket.accept()
+    
+    # We obtain a new DB session per websocket. A ContextManager handles connection scope.
+    # We can use our existing `get_session` generator manually.
+    db_gen = get_session()
+    db = next(db_gen)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("action") == "analyze_frame":
+                b64_img = data.get("image_b64")
+                
+                # Strip the prefix 'data:image/jpeg;base64,' if present
+                if b64_img and "," in b64_img:
+                    b64_img = b64_img.split(",")[1]
+                
+                if not b64_img:
+                    continue
+                    
+                try:
+                    # Run the LiteLLM vision completion
+                    # (Uses threadpool automatically in FastAPI if this blocks, but 
+                    # LiteLLM also has acompletion if we eventually want full async)
+                    response = completion(
+                        model="github/gpt-4o-mini",
+                        api_key=os.getenv("GITHUB_TOKEN"),
+                        api_base=os.getenv("GITHUB_MODELS_ENDPOINT", "https://models.github.ai/inference"),
+                        messages=[
+                            {"role": "system", "content": PSYCHOLOGIST_PROMPT},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": "Analyze this video frame of the candidate."},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}}
+                                ]
+                            }
+                        ],
+                        max_tokens=80
+                    )
+                    
+                    insight = response.choices[0].message.content
+                    logger.info(f"[{session_id} - Vision Insight]: {insight}")
+                    
+                    # Store observation in DB
+                    log_entry = InterviewBehaviorLog(
+                        session_id=session_id,
+                        observation_text=insight
+                    )
+                    db.add(log_entry)
+                    db.commit()
+                    
+                except Exception as e:
+                    logger.error(f"Vision API Error: {str(e)}")
+                    
+    except WebSocketDisconnect:
+        logger.info(f"Client {session_id} disconnected from Live Video Tracking.")
+    finally:
+        db.close()
+

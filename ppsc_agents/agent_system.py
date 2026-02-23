@@ -49,6 +49,168 @@ httpx_logger.propagate = False
 
 from .api_key_rotator import get_github_models_config
 from .offline_model import OfflineEchoModel
+from types import SimpleNamespace
+
+# Optionally use application DB for LLM memory instead of SQLiteSession
+USE_DB_MEMORY = os.getenv("USE_DB_MEMORY", "0").strip() in {"1", "true", "yes"}
+
+if USE_DB_MEMORY:
+    try:
+        # Lazy import to avoid circular imports during startup
+        from app.database import get_engine
+        from app.models.interview import InterviewMessage
+        from sqlmodel import Session as SQLSession, select, col
+
+        class DBSessionAdapter:
+            """Adapter that satisfies the full SessionABC interface backed by the
+            application's primary database (InterviewMessage table).
+
+            The OpenAI Agents Runner requires four async methods:
+              • get_items(limit)  – read history as SDK input-item dicts
+              • add_items(items)  – persist new SDK items
+              • pop_item()        – remove & return the most recent item
+              • clear_session()   – wipe the session
+            """
+
+            def __init__(self, session_id: str):
+                self.session_id = session_id
+
+            async def get_items(self, limit: int | None = None):
+                """Return conversation history as SDK-compatible dicts."""
+                try:
+                    def _read():
+                        with SQLSession(get_engine()) as db:
+                            stmt = (
+                                select(InterviewMessage)
+                                .where(InterviewMessage.session_id == self.session_id)
+                                .order_by(col(InterviewMessage.message_index))
+                            )
+                            if limit:
+                                # Fetch the *latest* N rows in ascending order
+                                total_stmt = select(InterviewMessage).where(
+                                    InterviewMessage.session_id == self.session_id
+                                )
+                                all_rows = db.exec(total_stmt).all()
+                                rows = sorted(all_rows, key=lambda r: r.message_index)
+                                rows = rows[-limit:] if limit else rows
+                            else:
+                                rows = db.exec(stmt).all()
+                            # Map custom DB roles → SDK roles (user/assistant/system only)
+                            _ROLE_MAP = {
+                                "candidate": "user",
+                                "interviewer": "assistant",
+                                "system": "system",
+                                "user": "user",
+                                "assistant": "assistant",
+                            }
+                            return [
+                                {
+                                    "role": _ROLE_MAP.get(r.role, "user"),
+                                    "content": r.content,
+                                }
+                                for r in rows
+                                if r.content  # skip empty-content rows
+                            ]
+                    import asyncio as _asyncio
+                    return await _asyncio.to_thread(_read)
+                except Exception:
+                    return []
+
+            async def add_items(self, items) -> None:
+                """Persist new SDK items (list of dicts) to InterviewMessage table."""
+                if not items:
+                    return
+                try:
+                    import asyncio as _asyncio
+
+                    def _write():
+                        with SQLSession(get_engine()) as db:
+                            # Determine next message_index
+                            stmt = (
+                                select(InterviewMessage)
+                                .where(InterviewMessage.session_id == self.session_id)
+                                .order_by(col(InterviewMessage.message_index).desc())
+                            )
+                            last = db.exec(stmt).first()
+                            next_idx = (last.message_index + 1) if last else 0
+
+                            for item in items:
+                                role = item.get("role", "assistant") if isinstance(item, dict) else "assistant"
+                                # content may be str or list[dict] — normalise to str
+                                raw_content = item.get("content", "") if isinstance(item, dict) else str(item)
+                                if isinstance(raw_content, list):
+                                    # Extract text parts
+                                    content = " ".join(
+                                        part.get("text", "") if isinstance(part, dict) else str(part)
+                                        for part in raw_content
+                                    )
+                                else:
+                                    content = str(raw_content) if raw_content is not None else ""
+
+                                msg = InterviewMessage(
+                                    session_id=self.session_id,
+                                    role=role,
+                                    content=content,
+                                    message_index=next_idx,
+                                )
+                                db.add(msg)
+                                next_idx += 1
+                            db.commit()
+
+                    await _asyncio.to_thread(_write)
+                except Exception as exc:
+                    logger.warning(f"DBSessionAdapter.add_items failed: {exc}")
+
+            async def pop_item(self):
+                """Remove and return the most recent item, or None if empty."""
+                try:
+                    import asyncio as _asyncio
+
+                    def _pop():
+                        with SQLSession(get_engine()) as db:
+                            stmt = (
+                                select(InterviewMessage)
+                                .where(InterviewMessage.session_id == self.session_id)
+                                .order_by(col(InterviewMessage.message_index).desc())
+                            )
+                            row = db.exec(stmt).first()
+                            if row is None:
+                                return None
+                            item = {"role": row.role, "content": row.content}
+                            db.delete(row)
+                            db.commit()
+                            return item
+
+                    return await _asyncio.to_thread(_pop)
+                except Exception:
+                    return None
+
+            async def clear_session(self):
+                """Delete all InterviewMessage rows for this session."""
+                try:
+                    import asyncio as _asyncio
+
+                    def _clear():
+                        with SQLSession(get_engine()) as db:
+                            rows = db.exec(
+                                select(InterviewMessage).where(
+                                    InterviewMessage.session_id == self.session_id
+                                )
+                            ).all()
+                            for row in rows:
+                                db.delete(row)
+                            db.commit()
+
+                    await _asyncio.to_thread(_clear)
+                except Exception:
+                    pass
+
+            def __repr__(self) -> str:  # pragma: no cover
+                return f"DBSessionAdapter(session_id={self.session_id!r})"
+
+
+    except Exception:
+        USE_DB_MEMORY = False
 
 # Load environment variables
 load_dotenv()
@@ -99,6 +261,58 @@ def handle_api_error(error: Exception) -> bool:
 def get_current_model():
     """Get the current LLM model instance."""
     return github_model
+
+
+def get_memory_session(session_id: Optional[str]):
+    """Return a memory/session object appropriate for Runner.run.
+    If `USE_DB_MEMORY` is enabled, return a `DBSessionAdapter` that reads from
+    the main application DB. Otherwise return a `SQLiteSession` instance.
+    If session_id is falsy, return None.
+    """
+    if not session_id:
+        return None
+    if USE_DB_MEMORY:
+        try:
+            return DBSessionAdapter(session_id)
+        except Exception:
+            return None
+    # Fallback to lite sqlite session
+    try:
+        return SQLiteSession(session_id, SESSION_DB)
+    except Exception:
+        return None
+
+
+# ------------------ Token estimation / logging ------------------
+try:
+    import tiktoken
+    _tiktoken_available = True
+except Exception:
+    _tiktoken_available = False
+
+
+def estimate_tokens(text: str, model_name: str | None = None) -> int:
+    """Estimate token count for `text` using tiktoken if available,
+    otherwise fall back to a simple heuristic (1 token ≈ 4 characters).
+    """
+    if not text:
+        return 0
+    if _tiktoken_available:
+        try:
+            enc = None
+            if model_name:
+                try:
+                    enc = tiktoken.encoding_for_model(model_name)
+                except Exception:
+                    enc = tiktoken.get_encoding("gpt2")
+            else:
+                enc = tiktoken.get_encoding("gpt2")
+            return len(enc.encode(text))
+        except Exception:
+            # fallback heuristic
+            return max(1, int(len(text) / 4))
+    # heuristic: average 4 chars per token
+    return max(1, int(len(text) / 4))
 
 
 # ==================== MCQ Agent Tools ====================
@@ -538,13 +752,26 @@ async def run_agent(
     Returns:
         Agent's response
     """
-    session = None
-    if session_id:
-        session = SQLiteSession(session_id, SESSION_DB)
+    session = get_memory_session(session_id)
 
     logger.info(f"Running agent with query: {query[:100]}...")
-
+    # Estimate tokens for context (instructions + memory + user query)
     try:
+        mem_items = []
+        if session is not None and hasattr(session, "get_items"):
+            try:
+                mem_items = await session.get_items(limit=50)
+            except Exception:
+                mem_items = []
+
+        mem_text = "\n".join(
+            (getattr(it, "content", str(it)) or "") for it in mem_items
+        )
+        instr_text = getattr(agent, "instructions", "") or ""
+        context_text = instr_text + "\n\nMemory:\n" + (mem_text or "") + "\n\nUser:\n" + (query or "")
+        est = estimate_tokens(context_text, getattr(agent.model, "model", None) if hasattr(agent, "model") else None)
+        logger.info(f"Estimated tokens for agent request: {est} (instr={estimate_tokens(instr_text)}, memory={estimate_tokens(mem_text)}, user={estimate_tokens(query)})")
+
         result = await Runner.run(agent, query, session=session)
         logger.info("✓ Agent request completed successfully")
         return result.final_output
@@ -575,13 +802,26 @@ async def run_orchestrator(
     Returns:
         Orchestrator's response
     """
-    session = None
-    if session_id:
-        session = SQLiteSession(session_id, SESSION_DB)
+    session = get_memory_session(session_id)
 
     logger.info(f"Running orchestrator with query: {query[:100]}...")
-
+    # Estimate tokens for context (instructions + memory + user query)
     try:
+        mem_items = []
+        if session is not None and hasattr(session, "get_items"):
+            try:
+                mem_items = await session.get_items(limit=50)
+            except Exception:
+                mem_items = []
+
+        mem_text = "\n".join(
+            (getattr(it, "content", str(it)) or "") for it in mem_items
+        )
+        instr_text = getattr(orchestrator, "instructions", "") or ""
+        context_text = instr_text + "\n\nMemory:\n" + (mem_text or "") + "\n\nUser:\n" + (query or "")
+        est = estimate_tokens(context_text, getattr(orchestrator.model, "model", None) if hasattr(orchestrator, "model") else None)
+        logger.info(f"Estimated tokens for orchestrator request: {est} (instr={estimate_tokens(instr_text)}, memory={estimate_tokens(mem_text)}, user={estimate_tokens(query)})")
+
         result = await Runner.run(orchestrator, query, session=session)
         logger.info("✓ Orchestrator request completed successfully")
         return result.final_output

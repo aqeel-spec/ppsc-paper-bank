@@ -108,6 +108,7 @@ class InterviewSession(SQLModel, table=True):
     messages: List["InterviewMessage"] = Relationship(back_populates="session")
     feedbacks: List["InterviewFeedback"] = Relationship(back_populates="session")
     question_scores: List["InterviewQuestionScore"] = Relationship(back_populates="session")
+    behavior_logs: List["InterviewBehaviorLog"] = Relationship(back_populates="session")
 
 
 class InterviewMessage(SQLModel, table=True):
@@ -159,6 +160,23 @@ class InterviewFeedback(SQLModel, table=True):
 
     # Relationship
     session: Optional[InterviewSession] = Relationship(back_populates="feedbacks")
+
+
+class InterviewBehaviorLog(SQLModel, table=True):
+    """AI Vision observations of the candidate's body language/eye contact."""
+
+    __tablename__ = "interview_behavior_log"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str = Field(index=True, foreign_key="interview_session.session_id", max_length=255)
+    observation_text: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime, server_default=func.now(), nullable=False),
+    )
+
+    # Relationship
+    session: Optional[InterviewSession] = Relationship(back_populates="behavior_logs")
 
 
 class InterviewQuestionScore(SQLModel, table=True):

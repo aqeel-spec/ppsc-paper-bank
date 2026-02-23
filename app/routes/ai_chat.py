@@ -11,13 +11,17 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+import logging
 from sqlalchemy import func, or_, Column as SAColumn
 from sqlmodel import Session, select, col
+
+logger = logging.getLogger(__name__)
 
 from agents import Agent, Runner, SQLiteSession, function_tool, Tool
 
 from app.database import get_engine, get_session, ensure_ai_explanation_column
 from app.models import MCQ
+
 
 from ppsc_agents.agent_system import (
     SESSION_DB,
@@ -34,6 +38,7 @@ from ppsc_agents.agent_system import (
 )
 
 router = APIRouter(prefix="/ai", tags=["AI"])
+MAX_MEMORY_MESSAGES = int(os.getenv("MAX_MEMORY_MESSAGES", "40"))
 
 
 @function_tool
@@ -254,6 +259,18 @@ async def chat_solve(payload: MCQChatSolveRequest, db: Session = Depends(get_ses
     prompt = _format_prompt(payload)
 
     memory_session = SQLiteSession(payload.session_id, SESSION_DB) if payload.session_id else None
+    # If there is an existing memory session, limit how much history we forward
+    if memory_session is not None:
+        try:
+            items = await memory_session.get_items(limit=MAX_MEMORY_MESSAGES + 1)
+            if len(items) > MAX_MEMORY_MESSAGES:
+                logger.warning(
+                    f"Session {payload.session_id} has {len(items)} messages; skipping memory to avoid token overflow"
+                )
+                memory_session = None
+        except Exception:
+            # If the memory read fails, fall back to no memory
+            memory_session = None
 
     try:
         result = await Runner.run(solver, prompt, session=memory_session)
@@ -295,6 +312,17 @@ async def chat_solve_stream(payload: MCQChatSolveRequest, db: Session = Depends(
     prompt = _format_prompt(payload)
 
     memory_session = SQLiteSession(payload.session_id, SESSION_DB) if payload.session_id else None
+    # If there is an existing memory session, limit how much history we forward
+    if memory_session is not None:
+        try:
+            items = await memory_session.get_items(limit=MAX_MEMORY_MESSAGES + 1)
+            if len(items) > MAX_MEMORY_MESSAGES:
+                logger.warning(
+                    f"Session {payload.session_id} has {len(items)} messages; skipping memory to avoid token overflow"
+                )
+                memory_session = None
+        except Exception:
+            memory_session = None
 
     async def gen() -> AsyncIterator[str]:
         current_solver = solver

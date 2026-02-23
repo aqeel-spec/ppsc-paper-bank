@@ -242,7 +242,8 @@ async def remove_background(
     file: UploadFile = File(..., description="Image file (PNG, JPEG, WebP). Max 10 MB."),
     format: Optional[str] = Form(None, description="Return format: 'png', 'jpeg', 'webp', or 'base64'. Auto-detected from upload if omitted."),
 ):
-    """Remove background locally (rembg / U2-Net). Returns transparent PNG by default."""
+    """Remove background using RMBG-2.0. Returns transparent PNG by default; auto-detects format from the uploaded file."""
+    _require_hf_token()
     _validate_upload(file)
     out_format = format or _detect_format(file)
     image_bytes = await _read_upload(file)
@@ -268,6 +269,7 @@ async def replace_bg_color(
     format: Optional[str] = Form(None, description="Return format: 'png', 'jpeg', 'webp', or 'base64'. Auto-detected if omitted."),
 ):
     """Remove background and replace with a solid colour."""
+    _require_hf_token()
     _validate_upload(file)
     out_format = format or _detect_format(file)
     image_bytes = await _read_upload(file)
@@ -296,6 +298,7 @@ async def replace_bg_image(
     format: Optional[str] = Form(None, description="Return format: 'png', 'jpeg', 'webp', or 'base64'. Auto-detected if omitted."),
 ):
     """Remove background and composite onto a custom background image."""
+    _require_hf_token()
     _validate_upload(file)
     _validate_upload(background)
     out_format = format or _detect_format(file)
@@ -335,6 +338,7 @@ async def passport_photo(
     format: Optional[str] = Form(None, description="Return format: 'png', 'jpeg', 'webp', or 'base64'. Auto-detected if omitted."),
 ):
     """Generate a passport-size photo: removes background, applies colour, crops/resizes to standard dimensions."""
+    _require_hf_token()
     _validate_upload(file)
     image_bytes = await _read_upload(file)
 
