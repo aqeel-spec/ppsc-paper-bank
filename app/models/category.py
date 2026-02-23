@@ -169,13 +169,13 @@ class CategoryResponse(SQLModel):
 
 
 from pydantic import BaseModel
-from typing import TypeVar, Generic
+from typing import TypeVar, Generic, Any
 
 T = TypeVar('T')
 
-class CategoryHierarchyResponse(CategoryResponse):
-    subcategories: Optional[list["CategoryHierarchyResponse"]] = None
-
+class CategoryDetailResponse(CategoryResponse):
+    subcategories: Optional[list["CategoryDetailResponse"]] = None
+    mcqs: Optional[list[Any]] = None
 
 class PaginatedResponse(BaseModel, Generic[T]):
     message: str = "success"
@@ -186,13 +186,6 @@ class PaginatedResponse(BaseModel, Generic[T]):
     total_items: int
     has_next: bool
     has_previous: bool
-
-
-class CategoryWithMCQs(CategoryResponse):
-    mcqs: list = []  # Will be populated with MCQ objects
-
-    class Config:
-        from_attributes = True
 
 
 # CRUD operations

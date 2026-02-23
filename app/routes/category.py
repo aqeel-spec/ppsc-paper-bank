@@ -12,9 +12,8 @@ from ..models.category import (
     CategoryCreate,
     CategoryUpdate,
     CategoryResponse,
-    CategoryWithMCQs,
     CategoryService,
-    CategoryHierarchyResponse,
+    CategoryDetailResponse,
     PaginatedResponse
 )
 
@@ -36,7 +35,7 @@ def create_category(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/", response_model=PaginatedResponse[CategoryHierarchyResponse] | PaginatedResponse[CategoryResponse])
+@router.get("/", response_model=PaginatedResponse[CategoryDetailResponse] | PaginatedResponse[CategoryResponse])
 def get_all_categories(
     include_subcategories: bool = Query(default=False, description="Include nested subcategories"),
     page: int = Query(default=1, ge=1, description="Page number"),
@@ -74,7 +73,7 @@ def get_all_categories(
     # First pass: map all root categories
     for cat in categories:
         if "/" not in cat.name:
-            root_categories_map[cat.name] = CategoryHierarchyResponse.model_validate(cat)
+            root_categories_map[cat.name] = CategoryDetailResponse.model_validate(cat)
             root_categories_map[cat.name].subcategories = []
             
     # Second pass: attach subcategories to their roots
@@ -83,12 +82,12 @@ def get_all_categories(
             parts = cat.name.split("/", 1)
             root_name = parts[0]
             if root_name in root_categories_map:
-                sub_cat = CategoryHierarchyResponse.model_validate(cat)
+                sub_cat = CategoryDetailResponse.model_validate(cat)
                 sub_cat.subcategories = None
                 root_categories_map[root_name].subcategories.append(sub_cat)
             else:
                 # If root doesn't exist for some reason, just treat it as a root
-                root_categories_map[cat.name] = CategoryHierarchyResponse.model_validate(cat)
+                root_categories_map[cat.name] = CategoryDetailResponse.model_validate(cat)
                 
     root_list = list(root_categories_map.values())
     
@@ -349,7 +348,7 @@ def validate_slug(slug: str, session: Session = Depends(get_session)):
     }
 
 
-@router.get("/{slug:path}", response_model=PaginatedResponse[CategoryHierarchyResponse] | PaginatedResponse[CategoryWithMCQs], response_model_exclude_none=True)
+@router.get("/{slug:path}", response_model=PaginatedResponse[CategoryDetailResponse], response_model_exclude_none=True)
 def get_category_by_id(
     slug: str,
     page: int = Query(default=1, ge=1, description="Page number"),
@@ -376,13 +375,13 @@ def get_category_by_id(
         total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
         
         offset = (page - 1) * limit
-        paginated_subs = [CategoryHierarchyResponse.model_validate(sub) for sub in subcategories[offset:offset + limit]]
+        paginated_subs = [CategoryDetailResponse.model_validate(sub) for sub in subcategories[offset:offset + limit]]
         
         # Strip nested arrays from these subcategories so the tree doesn't recurse infinitely
         for sub in paginated_subs:
             sub.subcategories = None
             
-        root_val = CategoryHierarchyResponse.model_validate(category)
+        root_val = CategoryDetailResponse.model_validate(category)
         root_val.subcategories = paginated_subs
 
         return PaginatedResponse(
@@ -415,7 +414,7 @@ def get_category_by_id(
     
     total_pages = (total_mcqs + limit - 1) // limit if total_mcqs > 0 else 1
     
-    root_val = CategoryWithMCQs.model_validate(category)
+    root_val = CategoryDetailResponse.model_validate(category)
     root_val.mcqs = [mcq.model_dump() for mcq in mcqs]
 
     return PaginatedResponse(
