@@ -55,16 +55,16 @@ Fetch the root categories (e.g. `English-Mcqs`, `Math-Mcqs`).
   - **Intermediate Nodes**: If the requested category has children (i.e. it is a parent node), it returns the category metadata and injects its paginated children into the `subcategories` array. It explicitly deletes the `mcqs` property to prevent loading massive MCQ lists prematurely.
   - **Leaf Nodes**: If the requested category has NO children, it completely drops the `subcategories` array. Instead, it queries the database for MCQs specifically assigned to this category and injects them into a paginated `mcqs` array.
 
-#### Example: Intermediate Node (`/categories/english-mcqs`)
+#### Example: Intermediate Node (`/categories/subjectwise/english-mcqs`)
 ```json
 {
   "message": "success",
   "data": [
     {
-      "name": "English-Mcqs",
-      "slug": "english-mcqs",
+      "name": "English Mcqs",
+      "slug": "subjectwise/english-mcqs",
       "subcategories": [
-        { "name": "English-Mcqs/Antonyms-Mcqs", "slug": "english-mcqs/antonyms-mcqs" }
+        { "name": "Antonyms Mcqs", "slug": "subjectwise/english-mcqs/antonyms-mcqs" }
       ]
     }
   ],
@@ -73,14 +73,14 @@ Fetch the root categories (e.g. `English-Mcqs`, `Math-Mcqs`).
 }
 ```
 
-#### Example: Leaf Node (`/categories/english-mcqs/antonyms-mcqs`)
+#### Example: Leaf Node (`/categories/subjectwise/english-mcqs/antonyms-mcqs`)
 ```json
 {
   "message": "success",
   "data": [
     {
-      "name": "English-Mcqs/Antonyms-Mcqs",
-      "slug": "english-mcqs/antonyms-mcqs",
+      "name": "Antonyms Mcqs",
+      "slug": "subjectwise/english-mcqs/antonyms-mcqs",
       "mcqs": [
         { "id": 2951, "question_text": "Antonym of ENTICE is...?" }
       ]
@@ -103,8 +103,8 @@ Fetches the absolute barebones `CategoryResponse` object for a specific slug, en
 Utility endpoint that simply checks boolean existence of a full path slug.
 ```json
 {
-  "slug": "english-mcqs/antonyms-mcqs",
+  "slug": "subjectwise/english-mcqs/antonyms-mcqs",
   "is_valid": true,
-  "message": "Slug 'english-mcqs/antonyms-mcqs' exists in database"
+  "message": "Slug 'subjectwise/english-mcqs/antonyms-mcqs' exists in database"
 }
 ```
