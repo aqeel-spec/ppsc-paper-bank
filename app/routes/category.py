@@ -84,10 +84,12 @@ def get_all_categories(
             if root_name in root_categories_map:
                 sub_cat = CategoryDetailResponse.model_validate(cat)
                 sub_cat.subcategories = None
+                sub_cat.mcqs = None  # Ensure MCQs are explicitly excluded in hierarchy
                 root_categories_map[root_name].subcategories.append(sub_cat)
             else:
                 # If root doesn't exist for some reason, just treat it as a root
                 root_categories_map[cat.name] = CategoryDetailResponse.model_validate(cat)
+                root_categories_map[cat.name].mcqs = None
                 
     root_list = list(root_categories_map.values())
     
@@ -380,6 +382,7 @@ def get_category_by_id(
         # Strip nested arrays from these subcategories so the tree doesn't recurse infinitely
         for sub in paginated_subs:
             sub.subcategories = None
+            sub.mcqs = None
             
         root_val = CategoryDetailResponse.model_validate(category)
         root_val.subcategories = paginated_subs
