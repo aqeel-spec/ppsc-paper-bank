@@ -349,7 +349,7 @@ def validate_slug(slug: str, session: Session = Depends(get_session)):
     }
 
 
-@router.get("/{slug:path}", response_model=PaginatedResponse[CategoryHierarchyResponse], response_model_exclude_none=True)
+@router.get("/{slug:path}", response_model=PaginatedResponse[CategoryHierarchyResponse] | PaginatedResponse[CategoryWithMCQs], response_model_exclude_none=True)
 def get_category_by_id(
     slug: str,
     page: int = Query(default=1, ge=1, description="Page number"),
@@ -358,6 +358,8 @@ def get_category_by_id(
 ):
     """
     Get a category by ID (slug), including its hierarchical paginated subcategories by default.
+    If the category has no subcategories (i.e. it is a leaf node), it will instead return
+    the actual paginated MCQs belonging to this category.
     """
     category = CategoryService.get_category_by_slug(slug, session)
     if not category:
@@ -368,28 +370,61 @@ def get_category_by_id(
     statement = select(Category).where(Category.name.startswith(prefix))
     subcategories = session.exec(statement).all()
     
-    total_items = len(subcategories)
-    total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
+    # If this category has subcategories, return the hierarchy response
+    if subcategories:
+        total_items = len(subcategories)
+        total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
+        
+        offset = (page - 1) * limit
+        paginated_subs = [CategoryHierarchyResponse.model_validate(sub) for sub in subcategories[offset:offset + limit]]
+        
+        # Strip nested arrays from these subcategories so the tree doesn't recurse infinitely
+        for sub in paginated_subs:
+            sub.subcategories = None
+            
+        root_val = CategoryHierarchyResponse.model_validate(category)
+        root_val.subcategories = paginated_subs
+
+        return PaginatedResponse(
+            message="success",
+            data=[root_val],
+            page=page,
+            limit=limit,
+            total_pages=total_pages,
+            total_items=total_items,
+            has_next=page < total_pages,
+            has_previous=page > 1
+        )
+    
+    # If no subcategories exist, fetch paginated MCQs for this category instead
+    from ..models.mcq import MCQ
+    
+    total_mcqs = session.exec(
+        select(func.count(MCQ.id)).where(MCQ.category_id == category.id)
+    ).one()
     
     offset = (page - 1) * limit
-    paginated_subs = [CategoryHierarchyResponse.model_validate(sub) for sub in subcategories[offset:offset + limit]]
+    mcqs_query = (
+        select(MCQ)
+        .where(MCQ.category_id == category.id)
+        .order_by(MCQ.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    mcqs = session.exec(mcqs_query).all()
     
-    # Strip nested arrays from these subcategories so the tree doesn't recurse infinitely
-    for sub in paginated_subs:
-        sub.subcategories = None
-        
-    root_val = CategoryHierarchyResponse.model_validate(category)
-    root_val.subcategories = paginated_subs
+    total_pages = (total_mcqs + limit - 1) // limit if total_mcqs > 0 else 1
+    
+    root_val = CategoryWithMCQs.model_validate(category)
+    root_val.mcqs = [mcq.model_dump() for mcq in mcqs]
 
-    # In this specific endpoint, 'total_items' reflects the count of subcategories,
-    # but the returned data object is the parent category itself.
     return PaginatedResponse(
         message="success",
         data=[root_val],
         page=page,
         limit=limit,
         total_pages=total_pages,
-        total_items=total_items,
+        total_items=total_mcqs,
         has_next=page < total_pages,
         has_previous=page > 1
     )
