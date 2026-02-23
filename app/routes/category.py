@@ -50,7 +50,8 @@ def get_all_categories(
     
     if not include_subcategories:
         # Return only the flat root categories without subcategories lists
-        root_categories = [cat for cat in categories if "/" not in cat.name]
+        # Now that every category starts with "Subjectwise/", root nodes are the ones with exactly 1 slash
+        root_categories = [cat for cat in categories if cat.name.count("/") == 1]
         total_items = len(root_categories)
         total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
         offset = (page - 1) * limit
@@ -70,17 +71,18 @@ def get_all_categories(
     # Hierarchical map
     root_categories_map = {}
     
-    # First pass: map all root categories
+    # First pass: map all root categories (exactly 1 slash, typically Subjectwise/CategoryName)
     for cat in categories:
-        if "/" not in cat.name:
+        if cat.name.count("/") == 1:
             root_categories_map[cat.name] = CategoryDetailResponse.model_validate(cat)
             root_categories_map[cat.name].subcategories = []
             
     # Second pass: attach subcategories to their roots
     for cat in categories:
-        if "/" in cat.name:
-            parts = cat.name.split("/", 1)
-            root_name = parts[0]
+        if cat.name.count("/") > 1:
+            # We want to group by "Subjectwise/CategoryName", which is the first TWO segments
+            parts = cat.name.split("/")
+            root_name = f"{parts[0]}/{parts[1]}"
             if root_name in root_categories_map:
                 sub_cat = CategoryDetailResponse.model_validate(cat)
                 sub_cat.subcategories = None
@@ -129,10 +131,17 @@ def get_subcategories(
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
         
+    # Subcategories of this parent will begin with the parent's generated path plus one more slash.
+    # We want direct subcategories, so they should have exactly one more slash than the parent.
+    parent_slash_count = category.name.count("/")
     prefix = f"{category.name}/"
-    statement = select(Category).where(Category.name.startswith(prefix))
+    statement = select(Category).where(
+        Category.name.startswith(prefix)
+    )
     
-    subcategories = session.exec(statement).all()
+    # Optional logic: if you only want DIRECT subcategories (not nested lower), filter in Python:
+    all_children = session.exec(statement).all()
+    subcategories = [c for c in all_children if c.name.count("/") == parent_slash_count + 1]
     
     total_items = len(subcategories)
     total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
@@ -367,9 +376,13 @@ def get_category_by_id(
         raise HTTPException(status_code=404, detail="Category not found")
         
     # Get all direct subcategories for this exact parent
+    parent_slash_count = category.name.count("/")
     prefix = f"{category.name}/"
     statement = select(Category).where(Category.name.startswith(prefix))
-    subcategories = session.exec(statement).all()
+    all_children = session.exec(statement).all()
+    
+    # Keep only direct children (exactly 1 deeper in the slash hierarchy)
+    subcategories = [c for c in all_children if c.name.count("/") == parent_slash_count + 1]
     
     # If this category has subcategories, return the hierarchy response
     if subcategories:
