@@ -8,8 +8,8 @@ from .category import (
     CategoryCreate, 
     CategoryUpdate, 
     CategoryResponse,
-    CategoryWithMCQs,
     CategoryService,
+    CategoryDetailResponse,
     CategorySlugManager,
     create_slug
 )
@@ -50,8 +50,8 @@ __all__ = [
     "CategoryCreate",
     "CategoryUpdate", 
     "CategoryResponse",
-    "CategoryWithMCQs",
     "CategoryService",
+    "CategoryDetailResponse",
     "CategorySlugManager",
     "create_slug",
     
