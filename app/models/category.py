@@ -157,6 +157,9 @@ class CategoryUpdate(SQLModel):
     slug: Optional[str] = Field(default=None, max_length=255, description="Updated slug")
 
 
+from pydantic import BaseModel, field_validator
+from typing import TypeVar, Generic, Any
+
 class CategoryResponse(SQLModel):
     id: Optional[int] = None
     name: str
@@ -164,12 +167,15 @@ class CategoryResponse(SQLModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
+    @field_validator("name", mode="after")
+    @classmethod
+    def sanitize_name(cls, v: str) -> str:
+        if isinstance(v, str) and "/" in v:
+            return v.split("/")[-1].replace("-", " ")
+        return v.replace("-", " ") if isinstance(v, str) else v
+    
     class Config:
         from_attributes = True
-
-
-from pydantic import BaseModel
-from typing import TypeVar, Generic, Any
 
 T = TypeVar('T')
 
