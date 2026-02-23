@@ -516,13 +516,14 @@ def _process_pakmcqs_pages(pages: List[str], category_id: int, chunk_number: int
             page_inserted = 0
             
             for mcq_data in mcqs:
-                # Check for duplicates
-                existing = session.exec(
-                    select(MCQ).where(
-                        (MCQ.question_text == mcq_data["question_text"]) &
-                        (MCQ.category_id == category_id)
-                    )
-                ).first()
+                # Check for duplicates without triggering autoflush of pending inserts
+                with session.no_autoflush:
+                    existing = session.exec(
+                        select(MCQ).where(
+                            (MCQ.question_text == mcq_data["question_text"]) &
+                            (MCQ.category_id == category_id)
+                        )
+                    ).first()
                 
                 if not existing:
                     mcq = MCQ(**mcq_data, category_id=category_id)
@@ -530,9 +531,10 @@ def _process_pakmcqs_pages(pages: List[str], category_id: int, chunk_number: int
                     inserted += 1
                     page_inserted += 1
             
+            # Commit after EACH page so we don't hold the DB transaction open during HTTP fetches
+            session.commit()
+            
             logger.info(f"[pakmcqs] [Chunk {chunk_number}] Page {page_num}: inserted {page_inserted}/{len(mcqs)} MCQs (skipped {len(mcqs) - page_inserted} duplicates)")
-        
-        session.commit()
     
     return inserted
 
@@ -670,13 +672,14 @@ def _process_pacegkacademy_pages(pages: List[str], category_id: int, chunk_numbe
             page_inserted = 0
             
             for mcq_data in mcqs:
-                # Check for duplicates
-                existing = session.exec(
-                    select(MCQ).where(
-                        (MCQ.question_text == mcq_data["question_text"]) &
-                        (MCQ.category_id == category_id)
-                    )
-                ).first()
+                # Check for duplicates without triggering autoflush of pending inserts
+                with session.no_autoflush:
+                    existing = session.exec(
+                        select(MCQ).where(
+                            (MCQ.question_text == mcq_data["question_text"]) &
+                            (MCQ.category_id == category_id)
+                        )
+                    ).first()
                 
                 if not existing:
                     mcq = MCQ(**mcq_data, category_id=category_id)
@@ -684,9 +687,10 @@ def _process_pacegkacademy_pages(pages: List[str], category_id: int, chunk_numbe
                     inserted += 1
                     page_inserted += 1
             
+            # Commit after EACH page so we don't hold the DB transaction open during HTTP fetches
+            session.commit()
+            
             logger.info(f"[pacegkacademy] [Chunk {chunk_number}] Page {page_num}: inserted {page_inserted}/{len(mcqs)} MCQs (skipped {len(mcqs) - page_inserted} duplicates)")
-        
-        session.commit()
     
     return inserted
 

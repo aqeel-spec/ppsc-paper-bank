@@ -349,7 +349,7 @@ def _build_mysql_connect_args(url: str) -> dict:
 
 # recycle connections after 5 minutes
 # to correspond with the compute scale down
-engine_kwargs: dict = {"pool_recycle": 300}
+engine_kwargs: dict = {"pool_recycle": 300, "pool_pre_ping": True}
 
 if connection_string.startswith("mysql"):
     connect_args, connection_string = _build_mysql_connect_args(connection_string)
