@@ -386,6 +386,8 @@ def get_category_by_id(
             
         root_val = CategoryDetailResponse.model_validate(category)
         root_val.subcategories = paginated_subs
+        # Explicitly strip MCQs from the root category since we are paginating subcategories here
+        root_val.mcqs = None
 
         return PaginatedResponse(
             message="success",
