@@ -16,6 +16,7 @@ class AnswerOption(str, Enum):
     OPTION_B = "option_b"
     OPTION_C = "option_c"
     OPTION_D = "option_d"
+    OPTION_E = "option_e"
 
 
 class MCQBase(SQLModel):
@@ -24,6 +25,7 @@ class MCQBase(SQLModel):
     option_b: str = Field(sa_column=Column(Text))
     option_c: str = Field(sa_column=Column(Text))
     option_d: str = Field(sa_column=Column(Text))
+    option_e: Optional[str] = Field(default=None, sa_column=Column(Text))
     correct_answer: AnswerOption
     explanation: Optional[str] = Field(default=None, sa_column=Column(Text))
     ai_explanation: Optional[str] = Field(
@@ -64,6 +66,7 @@ class MCQCreate(SQLModel):
     option_b: str
     option_c: str
     option_d: str
+    option_e: Optional[str] = None
     correct_answer: AnswerOption
     explanation: Optional[str] = None
 
@@ -96,6 +99,7 @@ class MCQUpdate(SQLModel):
     option_b: Optional[str] = None
     option_c: Optional[str] = None
     option_d: Optional[str] = None
+    option_e: Optional[str] = None
     correct_answer: Optional[AnswerOption] = None
     explanation: Optional[str] = None
     category_slug: Optional[str] = None
@@ -112,6 +116,7 @@ class MCQRead(SQLModel):
     option_b: str
     option_c: str
     option_d: str
+    option_e: Optional[str] = None
     correct_answer: AnswerOption
     explanation: Optional[str] = None
     ai_explanation: Optional[str] = None

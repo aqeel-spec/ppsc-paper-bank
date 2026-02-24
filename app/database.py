@@ -416,6 +416,26 @@ def ensure_ai_explanation_column() -> None:
             except Exception:
                 pass
 
+def ensure_option_e_column() -> None:
+    with engine.begin() as conn:
+        if engine.dialect.name == "mssql":
+            conn.execute(
+                text(
+                    "IF COL_LENGTH('dbo.mcqs_bank','option_e') IS NULL "
+                    "BEGIN ALTER TABLE dbo.mcqs_bank ADD option_e NVARCHAR(MAX) NULL END"
+                )
+            )
+        elif engine.dialect.name in {"mysql", "mariadb"}:
+            try:
+                conn.execute(text("ALTER TABLE mcqs_bank ADD COLUMN option_e LONGTEXT NULL"))
+            except Exception:
+                pass
+        elif engine.dialect.name in {"sqlite", "postgresql"}:
+            try:
+                conn.execute(text("ALTER TABLE mcqs_bank ADD COLUMN option_e TEXT"))
+            except Exception:
+                pass
+
 
 
 def get_engine():
@@ -432,6 +452,7 @@ def create_db_and_tables():
     try:
         SQLModel.metadata.create_all(engine)
         ensure_ai_explanation_column()
+        ensure_option_e_column()
         ensure_interview_session_columns()
     except SQLAlchemyError as exc:
         # SQL Server cannot create indexes on NVARCHAR(MAX). If the category table
@@ -450,6 +471,7 @@ def create_db_and_tables():
                 )
             SQLModel.metadata.create_all(engine)
             ensure_ai_explanation_column()
+            ensure_option_e_column()
             return
 
         raise
@@ -531,6 +553,10 @@ async def lifespan(app: FastAPI):
         # Still ensure new columns exist for features that depend on them.
         try:
             ensure_ai_explanation_column()
+        except Exception:
+            pass
+        try:
+            ensure_option_e_column()
         except Exception:
             pass
         try:
