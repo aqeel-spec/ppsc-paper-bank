@@ -61,6 +61,10 @@ def crawl_pages_pakmcqs(start_url: str, max_pages: int = None) -> List[str]:
             
             soup = BeautifulSoup(resp.text, "html.parser")
             
+            # Add a small delay to avoid hammering the server
+            import time
+            time.sleep(1)
+            
             # Look for next page link
             next_link = soup.select_one('a.next') or soup.select_one('a.page-numbers.next')
             
@@ -272,6 +276,10 @@ def _scrape_mcq_explanation(detail_url: str) -> Optional[str]:
         
         resp = requests.get(detail_url, headers=headers, timeout=30)
         resp.raise_for_status()
+        
+        # Add a tiny delay for explanation fetches so we don't open 50 sockets instantly
+        import time
+        time.sleep(0.5)
         
         soup = BeautifulSoup(resp.text, "html.parser")
         

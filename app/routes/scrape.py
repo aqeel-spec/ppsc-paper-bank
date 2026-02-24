@@ -470,6 +470,11 @@ def _scrape_and_insert_pakmcqs_task(url: str, category_id: int, scrape_explanati
             if len(chunk_pages) < chunk_size:
                 logger.info(f"[pakmcqs] reached last page (got {len(chunk_pages)} < {chunk_size})")
                 break
+                
+            # Sleep between chunks to prevent socket bombing
+            import time
+            logger.info(f"[pakmcqs] Sleeping for 4 seconds before next chunk to prevent socket hanging...")
+            time.sleep(4)
         
         logger.info(f"[pakmcqs] Done — inserted {total_inserted} MCQs into category {category_id} from {total_pages_processed} pages")
         
@@ -626,6 +631,11 @@ def _scrape_and_insert_pacegkacademy_task(url: str, category_id: int, scrape_exp
             if len(chunk_pages) < chunk_size:
                 logger.info(f"[pacegkacademy] reached last page (got {len(chunk_pages)} < {chunk_size})")
                 break
+                
+            # Sleep between chunks to prevent socket bombing
+            import time
+            logger.info(f"[pacegkacademy] Sleeping for 4 seconds before next chunk to prevent socket hanging...")
+            time.sleep(4)
         
         logger.info(f"[pacegkacademy] Done — inserted {total_inserted} MCQs into category {category_id} from {total_pages_processed} pages")
         
