@@ -62,8 +62,8 @@ def custom_openapi():
     )
     # THIS is what you need:
     schema["servers"] = [
-        {"url": "http://localhost:8000", "description": "Local development"},
         {"url": "https://ppsc-paper-bank.onrender.com", "description": "Render Production"},
+        {"url": "http://localhost:8000", "description": "Local development"},
     ]
     app.openapi_schema = schema
     return schema
