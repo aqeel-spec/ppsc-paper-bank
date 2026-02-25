@@ -36,6 +36,29 @@ from .interview import (
     MessageRole,
     SessionStatus,
 )
+from .user import User, UserSession, UserRole, OAuthProvider, UserRegister, UserLogin, UserRead, UserUpdate, TokenResponse
+from .community import (
+    MCQFavorite, MCQFavoriteCreate, MCQFavoriteRead,
+    MCQDiscussion, MCQDiscussionCreate, MCQDiscussionRead,
+    MCQSubmission, MCQSubmissionCreate, MCQStatsRead,
+    MCQTranslation, MCQTranslationCreate, MCQTranslationRead,
+)
+from .session import (
+    MockSession, MockSessionCreate, MockSessionRead, MockSessionStatus,
+    MockSessionAnswer, MockSessionAnswerCreate,
+    DailyPaper, DailyPaperRead,
+    DailyPaperAttempt, DailyPaperAttemptRead,
+)
+from .learning import (
+    LearningGoal, LearningGoalCreate, LearningGoalRead, GoalStatus,
+    LearningActivity, LearningActivityRead, ActivityType,
+    StudyStreak, StudyStreakRead,
+)
+from .suggestion import (
+    UserSuggestion, SuggestionCreate, SuggestionRead, SuggestionAdminUpdate,
+    SuggestionUpvote, SuggestionCategory, SuggestionStatus,
+)
+
 
 __all__ = [
     # Base models

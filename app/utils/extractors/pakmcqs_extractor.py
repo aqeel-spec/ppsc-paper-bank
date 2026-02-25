@@ -352,6 +352,12 @@ def _scrape_mcq_explanation(detail_url: str) -> Optional[str]:
         return explanation
         
     except Exception as e:
-        logger.error(f"[pakmcqs] Error scraping explanation from {detail_url}: {e}", exc_info=True)
+        import requests as _req
+        if isinstance(e, _req.exceptions.HTTPError) and e.response is not None and e.response.status_code == 404:
+            # 404 is expected when the question slug doesn't exactly match the PakMCQs URL.
+            # Log at debug level to avoid polluting logs.
+            logger.debug(f"[pakmcqs] 404 Not Found (URL mismatch) for MCQ: {detail_url}")
+        else:
+            logger.error(f"[pakmcqs] Error scraping explanation from {detail_url}: {e}", exc_info=True)
         return None
 

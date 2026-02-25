@@ -507,6 +507,48 @@ def create_db_and_tables():
  
 
 @asynccontextmanager
+def _seed_admin() -> None:
+    """Create the admin user from .env credentials if it does not already exist."""
+    import os as _os
+    from app.models.user import User, UserRole
+    from app.security import hash_password, ADMIN_USERNAME, ADMIN_PASSWORD
+
+    admin_email = _os.getenv("ADMIN_EMAIL", f"{ADMIN_USERNAME}@admin.local")
+
+    with Session(engine) as session:
+        from sqlmodel import select as _select
+        existing = session.exec(
+            _select(User).where(
+                (User.username == ADMIN_USERNAME) | (User.email == admin_email)
+            )
+        ).one_or_none()
+
+        if existing:
+            # Already exists: make sure role is admin
+            if existing.role != UserRole.admin:
+                existing.role = UserRole.admin
+                existing.credits = 999
+                session.add(existing)
+                session.commit()
+                print(f"✅ Admin role promoted for existing user '{ADMIN_USERNAME}'.")
+            else:
+                print(f"✅ Admin user '{ADMIN_USERNAME}' already exists.")
+            return
+
+        admin_user = User(
+            username=ADMIN_USERNAME,
+            email=admin_email,
+            hashed_password=hash_password(ADMIN_PASSWORD),
+            display_name="Admin",
+            role=UserRole.admin,
+            credits=999,
+            is_active=True,
+        )
+        session.add(admin_user)
+        session.commit()
+        print(f"✅ Admin user '{ADMIN_USERNAME}' created automatically.")
+
+
 async def lifespan(app: FastAPI):
     auto_create = os.getenv("AUTO_CREATE_TABLES", "0") == "1"
     is_dev_like_env = env in {"dev", "development", "local", "test"}
@@ -564,7 +606,13 @@ async def lifespan(app: FastAPI):
         except Exception:
             # Don't hard-fail production startup for a best-effort column add.
             pass
-    
+
+        # Seed the admin user from .env if it doesn't exist yet
+        try:
+            _seed_admin()
+        except Exception as e:
+            print(f"⚠️  Admin seed skipped: {e}")
+
     yield
 
     # # 2) Capture and store the running event loop on app.state

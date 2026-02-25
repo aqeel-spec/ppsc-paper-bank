@@ -50,8 +50,8 @@ def get_all_categories(
     
     if not include_subcategories:
         # Return only the flat root categories without subcategories lists
-        # Now that every category starts with "Subjectwise/", root nodes are the ones with exactly 1 slash
-        root_categories = [cat for cat in categories if cat.name.count("/") == 1]
+        # Now that every category starts with "subjectwise/", root nodes are the ones with exactly 1 slash in slug
+        root_categories = [cat for cat in categories if cat.slug.count("/") == 1]
         total_items = len(root_categories)
         total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
         offset = (page - 1) * limit
@@ -71,27 +71,27 @@ def get_all_categories(
     # Hierarchical map
     root_categories_map = {}
     
-    # First pass: map all root categories (exactly 1 slash, typically Subjectwise/CategoryName)
+    # First pass: map all root categories (exactly 1 slash in slug, typically subjectwise/category-name)
     for cat in categories:
-        if cat.name.count("/") == 1:
-            root_categories_map[cat.name] = CategoryDetailResponse.model_validate(cat)
-            root_categories_map[cat.name].subcategories = []
+        if cat.slug.count("/") == 1:
+            root_categories_map[cat.slug] = CategoryDetailResponse.model_validate(cat)
+            root_categories_map[cat.slug].subcategories = []
             
     # Second pass: attach subcategories to their roots
     for cat in categories:
-        if cat.name.count("/") > 1:
-            # We want to group by "Subjectwise/CategoryName", which is the first TWO segments
-            parts = cat.name.split("/")
-            root_name = f"{parts[0]}/{parts[1]}"
-            if root_name in root_categories_map:
+        if cat.slug.count("/") > 1:
+            # We want to group by "subjectwise/category-name", which is the first TWO segments
+            parts = cat.slug.split("/")
+            root_slug = f"{parts[0]}/{parts[1]}"
+            if root_slug in root_categories_map:
                 sub_cat = CategoryDetailResponse.model_validate(cat)
                 sub_cat.subcategories = None
                 sub_cat.mcqs = None  # Ensure MCQs are explicitly excluded in hierarchy
-                root_categories_map[root_name].subcategories.append(sub_cat)
+                root_categories_map[root_slug].subcategories.append(sub_cat)
             else:
                 # If root doesn't exist for some reason, just treat it as a root
-                root_categories_map[cat.name] = CategoryDetailResponse.model_validate(cat)
-                root_categories_map[cat.name].mcqs = None
+                root_categories_map[cat.slug] = CategoryDetailResponse.model_validate(cat)
+                root_categories_map[cat.slug].mcqs = None
                 
     root_list = list(root_categories_map.values())
     
@@ -133,15 +133,15 @@ def get_subcategories(
         
     # Subcategories of this parent will begin with the parent's generated path plus one more slash.
     # We want direct subcategories, so they should have exactly one more slash than the parent.
-    parent_slash_count = category.name.count("/")
-    prefix = f"{category.name}/"
+    parent_slash_count = category.slug.count("/")
+    prefix = f"{category.slug}/"
     statement = select(Category).where(
-        Category.name.startswith(prefix)
+        Category.slug.startswith(prefix)
     )
     
     # Optional logic: if you only want DIRECT subcategories (not nested lower), filter in Python:
     all_children = session.exec(statement).all()
-    subcategories = [c for c in all_children if c.name.count("/") == parent_slash_count + 1]
+    subcategories = [c for c in all_children if c.slug.count("/") == parent_slash_count + 1]
     
     total_items = len(subcategories)
     total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
@@ -224,11 +224,12 @@ def get_category_single_mcq(
         return mcq
 
 
-@router.get("/{slug:path}/with-mcqs")
+@router.get("/{slug:path}/with-mcqs", response_model=PaginatedResponse[CategoryDetailResponse], response_model_exclude_none=True)
 def get_category_with_mcqs(
     slug: str,
     explanation: bool = False,
     with_mcq: bool = True,
+    include_subcategories: bool = Query(default=True, description="Include MCQs from nested subcategories"),
     limit: int = Query(default=10, ge=1, le=100, description="Number of MCQs to return"),
     offset: int = Query(default=0, ge=0, description="Number of MCQs to skip"),
     session: Session = Depends(get_session)
@@ -239,6 +240,7 @@ def get_category_with_mcqs(
     Query Parameters:
     - explanation: If True, include/focus on explanations
     - with_mcq: If False with explanation=True, return only ID and explanation for each MCQ
+    - include_subcategories: If True (default), include MCQs from all nested subcategories recursively.
     - limit: Maximum number of MCQs to return (default: 10, max: 100)
     - offset: Number of MCQs to skip for pagination (default: 0)
     
@@ -251,29 +253,63 @@ def get_category_with_mcqs(
     """
     from sqlalchemy.orm import selectinload
     from sqlmodel import select
+    from urllib.parse import unquote
     from ..models.mcq import MCQ
     
+    # The client might send doubly-encoded slashes (%252F instead of /)
+    # Ensure the slug is fully decoded.
+    decoded_slug = unquote(unquote(slug))
+    
     # Get category first
-    category = session.exec(select(Category).where(Category.slug == slug)).first()
+    category = session.exec(select(Category).where(Category.slug == decoded_slug)).first()
     
     if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=f"Category '{decoded_slug}' not found")
+        
+    if include_subcategories:
+        # Get all category IDs for this category and its sub-categories
+        prefix_slug = f"{decoded_slug}/"
+        category_ids = session.exec(
+            select(Category.id).where(
+                (Category.slug == decoded_slug) | (Category.slug.startswith(prefix_slug))
+            )
+        ).all()
+    else:
+        # Only the exact category requested
+        category_ids = [category.id]
+
     
-    # Get total count of MCQs in this category
+    # Get total count of MCQs in this category and all sub-categories
     total_mcqs = session.exec(
-        select(func.count(MCQ.id)).where(MCQ.category_id == category.id)
+        select(func.count(MCQ.id)).where(MCQ.category_id.in_(category_ids))
     ).one()
     
     # Get paginated MCQs
     mcqs_query = (
         select(MCQ)
-        .where(MCQ.category_id == category.id)
+        .where(MCQ.category_id.in_(category_ids))
         .order_by(MCQ.id)
         .offset(offset)
         .limit(limit)
     )
     mcqs = session.exec(mcqs_query).all()
     
+    total_pages = (total_mcqs + limit - 1) // limit if total_mcqs > 0 else 1
+    page = (offset // limit) + 1 if limit > 0 else 1
+    
+    # Fetch subcategories if requested
+    subcategories_list = None
+    if include_subcategories:
+        parent_slash_count = category.slug.count("/")
+        all_children = session.exec(
+            select(Category).where(Category.slug.startswith(f"{category.slug}/"))
+        ).all()
+        direct_subs = [c for c in all_children if c.slug.count("/") == parent_slash_count + 1]
+        subcategories_list = [CategoryDetailResponse.model_validate(sub) for sub in direct_subs]
+        for sub in subcategories_list:
+            sub.subcategories = None
+            sub.mcqs = None
+
     # Build response based on parameters
     if explanation and not with_mcq:
         # Return only IDs and explanations for each MCQ
@@ -281,30 +317,39 @@ def get_category_with_mcqs(
             {"id": mcq.id, "explanation": mcq.explanation}
             for mcq in mcqs
         ]
-        return {
-            "id": category.id,
-            "name": category.name,
-            "slug": category.slug,
-            "created_at": category.created_at,
-            "updated_at": category.updated_at,
-            "total_mcqs": total_mcqs,
-            "limit": limit,
-            "offset": offset,
-            "mcqs": mcqs_minimal
-        }
+        
+        root_val = CategoryDetailResponse.model_validate(category)
+        root_val.id = category.id
+        # Sanitize name
+        raw_name = category.name.split("/")[-1]
+        root_val.name = raw_name.replace("-", " ").replace(" Mcqs", " MCQs").title().replace(" Mcqs", " MCQs")
+
+        root_val.slug = category.slug
+        root_val.mcqs = mcqs_minimal
+        root_val.subcategories = subcategories_list
     else:
         # Return full category with paginated MCQ details (default)
-        return {
-            "id": category.id,
-            "name": category.name,
-            "slug": category.slug,
-            "created_at": category.created_at,
-            "updated_at": category.updated_at,
-            "total_mcqs": total_mcqs,
-            "limit": limit,
-            "offset": offset,
-            "mcqs": [mcq.model_dump() for mcq in mcqs]
-        }
+        root_val = CategoryDetailResponse.model_validate(category)
+        root_val.id = category.id
+        
+        # Sanitize name
+        raw_name = category.name.split("/")[-1]
+        root_val.name = raw_name.replace("-", " ").replace(" Mcqs", " MCQs").title().replace(" Mcqs", " MCQs")
+        
+        root_val.slug = category.slug
+        root_val.mcqs = [mcq.model_dump() for mcq in mcqs]
+        root_val.subcategories = subcategories_list
+        
+    return PaginatedResponse(
+        message="success",
+        data=[root_val],
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        total_items=total_mcqs,
+        has_next=page < total_pages,
+        has_previous=page > 1
+    )
 
 
 @router.put("/{category_id}", response_model=CategoryResponse)
@@ -376,13 +421,13 @@ def get_category_by_id(
         raise HTTPException(status_code=404, detail="Category not found")
         
     # Get all direct subcategories for this exact parent
-    parent_slash_count = category.name.count("/")
-    prefix = f"{category.name}/"
-    statement = select(Category).where(Category.name.startswith(prefix))
+    parent_slash_count = category.slug.count("/")
+    prefix = f"{category.slug}/"
+    statement = select(Category).where(Category.slug.startswith(prefix))
     all_children = session.exec(statement).all()
     
     # Keep only direct children (exactly 1 deeper in the slash hierarchy)
-    subcategories = [c for c in all_children if c.name.count("/") == parent_slash_count + 1]
+    subcategories = [c for c in all_children if c.slug.count("/") == parent_slash_count + 1]
     
     # If this category has subcategories, return the hierarchy response
     if subcategories:

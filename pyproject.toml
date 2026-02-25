@@ -35,6 +35,9 @@ markdownify = "^1.2.2"
 openai-agents = {extras = ["litellm", "sqlalchemy"], version = "^0.6.2"}
 aiomysql = "^0.3.2"
 pyodbc = "^5.2.0"
+passlib = {version = "1.7.4", extras = ["bcrypt"]}
+python-jose = {version = "3.3.0", extras = ["cryptography"]}
+python-multipart = "^0.0.22"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"

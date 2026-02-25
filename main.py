@@ -12,6 +12,15 @@ from app.routes.image_gen import router as image_gen_router
 from app.routes.bg_removal import router as bg_removal_router
 from app.routes.mock_interview import router as mock_interview_router
 from app.database import lifespan
+# ── New feature routes ────────────────────────────────────────────────────────
+from app.routes.auth import router as auth_router
+from app.routes.users import router as users_router
+from app.routes.mock_sessions import router as mock_sessions_router
+from app.routes.daily_papers import router as daily_papers_router
+from app.routes.community import router as community_router
+from app.routes.suggestions import router as suggestions_router
+from app.routes.admin import router as admin_router
+
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,8 +62,8 @@ def custom_openapi():
     )
     # THIS is what you need:
     schema["servers"] = [
-        {"url": "https://ppsc-paper-bank.onrender.com", "description": "Render Production"},
         {"url": "http://localhost:8000", "description": "Local development"},
+        {"url": "https://ppsc-paper-bank.onrender.com", "description": "Render Production"},
     ]
     app.openapi_schema = schema
     return schema
@@ -133,6 +142,15 @@ app.include_router(agent_service_router, tags=["Agent"])
 app.include_router(image_gen_router, tags=["Image Generation"])
 app.include_router(bg_removal_router, tags=["Background Removal"])
 app.include_router(mock_interview_router, tags=["Mock Interview"])
+# ── New feature routes ────────────────────────────────────────────────────────
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(mock_sessions_router)
+app.include_router(daily_papers_router)
+app.include_router(community_router)
+app.include_router(suggestions_router)
+app.include_router(admin_router)
+
 
 # -----------------------------------------------------------------------------
 # Make it runnable with `python main.py`
