@@ -84,9 +84,10 @@ def create_series(
 
     paper_ids = [p.id for p in papers if p.id is not None]
     total = len(paper_ids)
+    auto_title = f"PPSC Series {'/'.join(str(y) for y in years)} - {body.start_date.isoformat()}"
 
     series = PaperSeries(
-        title=body.title or f"PPSC Series {'/'.join(str(y) for y in years)}",
+        title=(body.title.strip() if isinstance(body.title, str) and body.title.strip() else auto_title),
         created_by=current_user.id,
         mode=body.mode,
         years_json=years,
