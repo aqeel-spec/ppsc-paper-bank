@@ -4,8 +4,12 @@ Tests all agents, tools, and session management
 """
 
 import asyncio
+import os
 import sys
 import logging
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from ppsc_agents import (
     mcq_agent,
     paper_agent,

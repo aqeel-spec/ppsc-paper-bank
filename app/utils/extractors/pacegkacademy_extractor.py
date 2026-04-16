@@ -18,6 +18,87 @@ from app.models import AnswerOption
 logger = logging.getLogger("scrape")
 
 
+def extract_paper_links_pacegkacademy(soup: BeautifulSoup, base_url: str = "https://www.pacegkacademy.com") -> List[dict]:
+    """
+    Parse the PaceGKAcademy listing/index page and extract paper metadata from each card.
+
+    Card HTML structure:
+    <div class="courses-item content">
+      <div class="content-part">
+        <ul class="meta-part">
+          <li><span class="price">2020</span></li>
+          <li>Model Paper 1</li>           ← subtitle/model number
+        </ul>
+        <h3 class="title"><a href="/PPSC-Past-Paper-Question/301">Assistant</a></h3>
+        <div class="bottom-part">
+          <div class="info-meta">
+            <ul>
+              <li class="user">Punjab Police Department</li>
+            </ul>
+          </div>
+          <div class="btn-part">
+            <a href="/PPSC-Past-Paper-Question/301">...</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    Returns:
+        List of dicts with keys: url, title, year, subtitle, department
+    """
+    papers = []
+    cards = soup.select("div.courses-item.content")
+    logger.info(f"[pacegkacademy] Found {len(cards)} paper cards on listing page")
+
+    for card in cards:
+        try:
+            content = card.select_one("div.content-part")
+            if not content:
+                continue
+
+            # Year: first <li> in .meta-part > span.price
+            year = None
+            meta_items = content.select("ul.meta-part > li")
+            if meta_items:
+                price_span = meta_items[0].select_one("span.price")
+                if price_span:
+                    year = price_span.get_text(strip=True)
+
+            # Subtitle / model number: second <li> in .meta-part
+            subtitle = None
+            if len(meta_items) > 1:
+                subtitle = meta_items[1].get_text(strip=True)
+
+            # Paper title + URL: h3.title > a
+            title_anchor = content.select_one("h3.title a")
+            if not title_anchor:
+                continue
+            title = title_anchor.get_text(strip=True)
+            href = title_anchor.get("href", "")
+            url = urljoin(base_url, href)
+
+            # Department: li.user inside .info-meta
+            department = None
+            dept_el = content.select_one("div.info-meta li.user")
+            if dept_el:
+                department = dept_el.get_text(strip=True)
+
+            papers.append({
+                "url": url,
+                "title": title,
+                "year": year,
+                "subtitle": subtitle,
+                "department": department,
+            })
+            logger.debug(f"[pacegkacademy] Card → '{title}' ({year}) | {department} | {url}")
+
+        except Exception as e:
+            logger.warning(f"[pacegkacademy] Failed to parse paper card: {e}")
+            continue
+
+    logger.info(f"[pacegkacademy] Extracted {len(papers)} paper links from listing page")
+    return papers
+
 def crawl_pages_pacegkacademy(start_url: str, max_pages: int = None) -> List[str]:
     """
     Crawl PaceGKAcademy pages with pagination detection.
@@ -144,7 +225,26 @@ def extract_mcqs_pacegkacademy(soup: BeautifulSoup, scrape_explanations: bool = 
         List of MCQ dictionaries
     """
     mcqs = []
-    
+
+    # -----------------------------------------------------------------------
+    # Extract paper-level metadata from breadcrumb h1#papName
+    # e.g. <h1 class="page-title" id="papName">Assistant(2020)<br>Punjab Police</h1>
+    # -----------------------------------------------------------------------
+    source_paper = None
+    source_organization = None
+
+    pap_name_el = soup.select_one("h1#papName")
+    if pap_name_el:
+        # Replace <br> with newline so we can split on it
+        for br in pap_name_el.find_all("br"):
+            br.replace_with("\n")
+        parts = [p.strip() for p in pap_name_el.get_text().split("\n") if p.strip()]
+        if parts:
+            source_paper = parts[0]          # e.g. "Assistant(2020)"
+        if len(parts) > 1:
+            source_organization = parts[1]   # e.g. "Punjab Police"
+        logger.info(f"[pacegkacademy] Paper: '{source_paper}' | Org: '{source_organization}'")
+
     # Find all MCQ containers
     mcq_containers = soup.select("div.courses-item.content")
     
@@ -154,6 +254,11 @@ def extract_mcqs_pacegkacademy(soup: BeautifulSoup, scrape_explanations: bool = 
         try:
             mcq_data = _extract_single_mcq(container, scrape_explanations)
             if mcq_data:
+                # Attach paper-level metadata to every MCQ
+                if source_paper:
+                    mcq_data["source_paper"] = source_paper
+                if source_organization:
+                    mcq_data["source_organization"] = source_organization
                 mcqs.append(mcq_data)
         except Exception as e:
             logger.warning(f"[pacegkacademy] Failed to extract MCQ: {e}")
@@ -161,6 +266,7 @@ def extract_mcqs_pacegkacademy(soup: BeautifulSoup, scrape_explanations: bool = 
     
     logger.info(f"[pacegkacademy] Successfully extracted {len(mcqs)} MCQs from page")
     return mcqs
+
 
 
 def _extract_single_mcq(container: BeautifulSoup, scrape_explanations: bool = False) -> Optional[dict]:

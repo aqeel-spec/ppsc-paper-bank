@@ -20,6 +20,7 @@ from app.routes.daily_papers import router as daily_papers_router
 from app.routes.community import router as community_router
 from app.routes.suggestions import router as suggestions_router
 from app.routes.admin import router as admin_router
+from app.routes.paper_series import router as paper_series_router
 
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
@@ -62,8 +63,8 @@ def custom_openapi():
     )
     # THIS is what you need:
     schema["servers"] = [
-        {"url": "https://ppsc-paper-bank.onrender.com", "description": "Render Production"},
         {"url": "http://localhost:8000", "description": "Local development"},
+        {"url": "https://ppsc-paper-bank.onrender.com", "description": "Render Production"},
     ]
     app.openapi_schema = schema
     return schema
@@ -150,6 +151,7 @@ app.include_router(daily_papers_router)
 app.include_router(community_router)
 app.include_router(suggestions_router)
 app.include_router(admin_router)
+app.include_router(paper_series_router)
 
 
 # -----------------------------------------------------------------------------

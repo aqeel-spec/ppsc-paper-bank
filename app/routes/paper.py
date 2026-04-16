@@ -119,8 +119,11 @@ class PaperResponse(BaseModel):
 
 
 class PaperItem(BaseModel):
+    id:            int
     length:        int
     created_at:    datetime
+    year:          Optional[int] = None
+    title:         Optional[str] = None
     view_url:      str
     pdf_q_url:     str
     pdf_a_url:     str
@@ -168,8 +171,11 @@ def list_papers(
     for p in papers:
         n = len(p.paper_mcqs)
         out[f"paper_{p.id}"] = PaperItem(
+            id=         p.id,
             length=     n,
             created_at= p.created_at.isoformat(),
+            year=       p.year,
+            title=      p.title,
             view_url=   f"/papers/{p.id}/view",
             pdf_q_url=  f"/papers/{p.id}/pdf?show_answers=false",
             pdf_a_url=  f"/papers/{p.id}/pdf?show_answers=true",

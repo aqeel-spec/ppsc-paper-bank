@@ -1,0 +1,9 @@
+# OpenSpec Cursor Rules
+
+OpenSpec-first workflow for this repository:
+
+- Read openspec/backend-analysis.md before major backend edits.
+- Treat openspec/openapi.json as API contract source.
+- Use skills in openspec/skills/ for implementation strategy.
+- For SQLModel schema changes, create Alembic migrations.
+- Keep endpoint behavior backward compatible unless requested.

@@ -1,8 +1,8 @@
 import os
 import sys
 
-# Add current dir to python path
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+# Add project root to python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.routes.scrape import _requests_get_html_with_retries
 from bs4 import BeautifulSoup

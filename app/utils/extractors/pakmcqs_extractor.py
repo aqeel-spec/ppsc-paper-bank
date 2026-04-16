@@ -267,20 +267,62 @@ def _scrape_mcq_explanation(detail_url: str) -> Optional[str]:
     Returns:
         Markdown-formatted explanation or None if not found
     """
+    import time
+    import requests as _req
+
+    # Module-level consecutive failure tracker for circuit breaker
+    if not hasattr(_scrape_mcq_explanation, "_consec_failures"):
+        _scrape_mcq_explanation._consec_failures = 0
+
+    # Circuit breaker: if too many consecutive failures, pause
+    if _scrape_mcq_explanation._consec_failures >= 5:
+        cooldown = 150  # 5 minutes
+        logger.warning(
+            f"[pakmcqs] Circuit breaker triggered after {_scrape_mcq_explanation._consec_failures} "
+            f"consecutive timeouts. Pausing for {cooldown}s before retrying."
+        )
+        time.sleep(cooldown)
+        _scrape_mcq_explanation._consec_failures = 0
+
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Encoding": "gzip, deflate",  # Avoid brotli compression
         }
-        
-        resp = requests.get(detail_url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        
-        # Add a tiny delay for explanation fetches so we don't open 50 sockets instantly
-        import time
-        time.sleep(0.5)
-        
+
+        resp = None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(detail_url, headers=headers, timeout=20)
+                resp.raise_for_status()
+                # Success – reset failure counter and break
+                _scrape_mcq_explanation._consec_failures = 0
+                break
+            except (_req.exceptions.ReadTimeout, _req.exceptions.ConnectTimeout) as timeout_exc:
+                backoff = 2 ** (attempt + 1)  # 2, 4, 8 seconds
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"[pakmcqs] Timeout on attempt {attempt + 1}/{max_retries} for {detail_url}. "
+                        f"Retrying in {backoff}s…"
+                    )
+                    time.sleep(backoff)
+                else:
+                    # All retries exhausted
+                    _scrape_mcq_explanation._consec_failures += 1
+                    logger.error(
+                        f"[pakmcqs] Timeout scraping {detail_url} after {max_retries} attempts "
+                        f"(consecutive failures: {_scrape_mcq_explanation._consec_failures})"
+                    )
+                    return None
+
+        if resp is None:
+            return None
+
+        # Small polite delay between successful fetches
+        time.sleep(1)
+
         soup = BeautifulSoup(resp.text, "html.parser")
         
         # Find the article with post-content

@@ -550,6 +550,8 @@ def _seed_admin() -> None:
 
 
 async def lifespan(app: FastAPI):
+    from app.services.paper_series_scheduler import start_paper_series_scheduler, stop_paper_series_scheduler
+
     auto_create = os.getenv("AUTO_CREATE_TABLES", "0") == "1"
     is_dev_like_env = env in {"dev", "development", "local", "test"}
     allow_start_without_db = os.getenv("ALLOW_START_WITHOUT_DB", "0") == "1"
@@ -613,7 +615,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"⚠️  Admin seed skipped: {e}")
 
-    yield
+    start_paper_series_scheduler()
+    try:
+        yield
+    finally:
+        stop_paper_series_scheduler()
 
     # # 2) Capture and store the running event loop on app.state
     # loop = asyncio.get_running_loop()

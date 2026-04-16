@@ -58,6 +58,21 @@ from .suggestion import (
     UserSuggestion, SuggestionCreate, SuggestionRead, SuggestionAdminUpdate,
     SuggestionUpvote, SuggestionCategory, SuggestionStatus,
 )
+from .paper_series import (
+    PaperSeries,
+    PaperSeriesDay,
+    PaperSeriesAttempt,
+    PaperSeriesRewardLog,
+    PaperSeriesMode,
+    PaperSeriesStatus,
+    PaperSeriesPhase,
+    PaperSeriesCreate,
+    PaperSeriesRead,
+    PaperSeriesDayRead,
+    PaperSeriesAttemptStartResponse,
+    PaperSeriesAttemptSubmit,
+    PaperSeriesRewardRead,
+)
 
 
 __all__ = [

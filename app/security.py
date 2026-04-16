@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlmodel import Session, select
@@ -16,10 +16,9 @@ from app.database import get_session
 
 # ---------------------------------------------------------------------------
 # Configuration (read from environment)
-# ---------------------------------------------------------------------------
 SECRET_KEY: str = os.getenv("SECRET_KEY", "changeme-use-a-real-random-secret-in-prod")
 ALGORITHM: str = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))
 REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
 # Admin credentials (stored in .env, never in DB for safety)
@@ -45,6 +44,37 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+
+def _extract_bearer_token(request: Request, token: Optional[str]) -> Optional[str]:
+    """Resolve access token from standard OAuth header, common fallback headers, or cookies."""
+    if token:
+        return token
+
+    # Header fallbacks used by some clients/proxies.
+    raw_auth = request.headers.get("authorization")
+    if isinstance(raw_auth, str) and raw_auth.strip():
+        raw_auth = raw_auth.strip()
+        if raw_auth.lower().startswith("bearer "):
+            return raw_auth[7:].strip() or None
+        return raw_auth
+
+    x_access_token = request.headers.get("x-access-token")
+    if isinstance(x_access_token, str) and x_access_token.strip():
+        return x_access_token.strip()
+
+    # Cookie fallbacks for browser-based clients.
+    for cookie_name in ("access_token", "token", "auth_token"):
+        cookie_val = request.cookies.get(cookie_name)
+        if not isinstance(cookie_val, str) or not cookie_val.strip():
+            continue
+        candidate = cookie_val.strip()
+        if candidate.lower().startswith("bearer "):
+            candidate = candidate[7:].strip()
+        if candidate:
+            return candidate
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +107,7 @@ def decode_token(token: str) -> dict:
 # FastAPI auth dependencies
 # ---------------------------------------------------------------------------
 def get_current_user(
+    request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
     session: Session = Depends(get_session),
 ):
@@ -88,10 +119,11 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if token is None:
+    resolved_token = _extract_bearer_token(request, token)
+    if resolved_token is None:
         raise credentials_exception
     try:
-        payload = decode_token(token)
+        payload = decode_token(resolved_token)
         if payload.get("type") != "access":
             raise credentials_exception
         user_id: Optional[str] = payload.get("sub")
@@ -107,14 +139,16 @@ def get_current_user(
 
 
 def get_optional_user(
+    request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
     session: Session = Depends(get_session),
 ):
     """Return the current user or None (for optional-auth endpoints)."""
-    if token is None:
+    resolved_token = _extract_bearer_token(request, token)
+    if resolved_token is None:
         return None
     try:
-        return get_current_user(token=token, session=session)
+        return get_current_user(request=request, token=resolved_token, session=session)
     except HTTPException:
         return None
 

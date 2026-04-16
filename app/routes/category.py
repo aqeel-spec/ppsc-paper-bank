@@ -437,9 +437,24 @@ def get_category_by_id(
         offset = (page - 1) * limit
         paginated_subs = [CategoryDetailResponse.model_validate(sub) for sub in subcategories[offset:offset + limit]]
         
-        # Strip nested arrays from these subcategories so the tree doesn't recurse infinitely
+        # For each department sub-category, also fetch its direct children (papers)
         for sub in paginated_subs:
-            sub.subcategories = None
+            sub_slash_count = sub.slug.count("/")
+            sub_prefix = f"{sub.slug}/"
+            all_sub_children = session.exec(
+                select(Category).where(Category.slug.startswith(sub_prefix))
+            ).all()
+            # Only direct children of this sub (one level deeper)
+            sub_papers = [c for c in all_sub_children if c.slug.count("/") == sub_slash_count + 1]
+            if sub_papers:
+                sub.subcategories = [
+                    CategoryDetailResponse.model_validate(p) for p in sub_papers
+                ]
+                for p in sub.subcategories:
+                    p.subcategories = None
+                    p.mcqs = None
+            else:
+                sub.subcategories = None
             sub.mcqs = None
             
         root_val = CategoryDetailResponse.model_validate(category)
@@ -457,6 +472,7 @@ def get_category_by_id(
             has_next=page < total_pages,
             has_previous=page > 1
         )
+
     
     # If no subcategories exist, fetch paginated MCQs for this category instead
     from ..models.mcq import MCQ

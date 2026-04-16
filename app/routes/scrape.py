@@ -29,7 +29,8 @@ from app.utils.extractors import (
     crawl_pages_pakmcqs,
     _scrape_mcq_explanation,
     extract_mcqs_pacegkacademy,
-    crawl_pages_pacegkacademy
+    crawl_pages_pacegkacademy,
+    extract_paper_links_pacegkacademy,
 )
 
 # configure a module-level logger
@@ -320,19 +321,36 @@ def _scrape_and_insert_testpoint_chunk_task(
                 mcqs = extract_mcqs_testpoint(soup)
 
                 page_inserted = 0
+                page_updated = 0
                 for mcq_data in mcqs:
-                    # Avoid autoflush while we do duplicate checks; we only want to flush/commit
-                    # after we've processed the page and updated state.
+                    new_explanation = mcq_data.get("explanation")
+
                     with session.no_autoflush:
-                        existing = session.exec(
+                        # 1. Check exact match within this category (same slug)
+                        existing_same_cat = session.exec(
                             select(MCQ).where(
-                                (MCQ.question_text == mcq_data["question_text"]) & (MCQ.category_id == category_id)
+                                (MCQ.question_text == mcq_data["question_text"]) &
+                                (MCQ.category_id == category_id)
                             )
                         ).first()
-                    if existing:
-                        continue
+
+                        # 2. If not in this category, check globally (already scraped from paceGKAcademy etc.)
+                        existing_global = existing_same_cat or session.exec(
+                            select(MCQ).where(MCQ.question_text == mcq_data["question_text"])
+                        ).first()
+
+                    if existing_global:
+                        # MCQ already in DB — only update explanation if it was null and we now have one
+                        if new_explanation and not existing_global.explanation:
+                            existing_global.explanation = new_explanation
+                            session.add(existing_global)
+                            page_updated += 1
+                        continue  # skip insert; explanation patched above if needed
+
+                    # Brand-new MCQ — insert under this category
                     session.add(MCQ(**mcq_data, category_id=category_id))
                     page_inserted += 1
+
 
                 # Find next page
                 nxt = soup.select_one('ul.pagination a.page-link[rel=next]')
@@ -371,7 +389,8 @@ def _scrape_and_insert_testpoint_chunk_task(
                     return
 
                 logger.info(
-                    f"[testpoint] [state {state_id}] page done: inserted {page_inserted}/{len(mcqs)}; total pages={state.pages_processed} total new mcqs={state.new_mcqs_created}"
+                    f"[testpoint] [state {state_id}] page done: inserted {page_inserted}/{len(mcqs)} new, "
+                    f"explanations updated {page_updated}; total pages={state.pages_processed} total new mcqs={state.new_mcqs_created}"
                 )
 
                 processed_this_chunk += 1
@@ -430,15 +449,17 @@ def enqueue_scrape(
     )
 
     # 3) Schedule chunked background work (safe to resume)
+    effective_max_pages = req.max_pages if (req.max_pages and req.max_pages > 0) else None
     logger.info(f"[testpoint] enqueueing chunk task state_id={st.id} name={st.category_name!r}, category_id={cat.id}, url={req.url}, chunk_size={req.chunk_size}")
     threading.Thread(target=_scrape_and_insert_testpoint_chunk_task, args=(
         st.id,
         cat.id,
         req.chunk_size,
-        req.max_pages,
+        effective_max_pages,
         req.auto_continue,
         req.sleep_between_chunks_seconds,
     ), daemon=True).start()
+
 
     mode = "auto" if req.auto_continue else "manual"
     return ScrapeResponse(message=f"TestPoint scraping for '{req.slug}' started (chunked/resumable, {mode}, state={st.category_name!r})", state_id=st.id)
@@ -1119,92 +1140,188 @@ def resume_scrape_pakmcqs(
     return ScrapeResponse(message=f"PakMCQs resume started (state={state_label!r})", state_id=st.id)
 
 
-def _scrape_and_insert_pacegkacademy_task(url: str, category_id: int, scrape_explanations: bool = False):
+def _scrape_and_insert_pacegkacademy_task(url: str, category_id: int, scrape_explanations: bool = False, parent_slug: str = ""):
     """
-    Background task for PaceGKAcademy: crawl and process pages in chunks.
-    Processes pages as they are discovered to avoid memory issues.
-    
-    Args:
-        url: Starting URL to scrape
-        category_id: Category ID to insert MCQs into
-        scrape_explanations: If True, follow detail links and scrape explanations
+    Background task for PaceGKAcademy.
+
+    Automatically detects whether `url` is:
+    - A LISTING page (paper cards with div.content-part) → extracts paper links
+      and scrapes each individual paper page.
+    - A DIRECT MCQ page → falls back to the original chunked-crawl approach.
     """
-    chunk_size = 50
-    chunk_number = 0
+    import time as _time
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate",
+    }
+
     total_inserted = 0
-    total_pages_processed = 0
-    
+
     try:
-        logger.info(f"[pacegkacademy] starting chunked crawl for {url}")
-        
-        # Process pages in chunks - crawl chunk_size pages at a time
-        while True:
-            chunk_number += 1
-            
-            # Calculate starting page for this chunk
-            if chunk_number == 1:
-                chunk_url = url
-            else:
-                # Build URL for next chunk starting point
-                chunk_url = f"{url}/page/{total_pages_processed + 1}"
-            
-            chunk_start_page = total_pages_processed + 1
-            chunk_end_page = total_pages_processed + chunk_size
-            
-            logger.info(f"[pacegkacademy] ========== CHUNK {chunk_number} START (Pages {chunk_start_page}-{chunk_end_page}) ==========")
-            
-            # Crawl up to chunk_size pages
-            chunk_pages = crawl_pages_pacegkacademy(chunk_url, max_pages=chunk_size)
-            
-            if not chunk_pages:
-                logger.info(f"[pacegkacademy] no more pages found, stopping")
-                break
-            
-            actual_chunk_end = chunk_start_page + len(chunk_pages) - 1
-            logger.info(f"[pacegkacademy] [Chunk {chunk_number}] Crawled {len(chunk_pages)} pages (Pages {chunk_start_page}-{actual_chunk_end})")
-            
-            # Process this chunk
-            inserted = _process_pacegkacademy_pages(chunk_pages, category_id, chunk_number, chunk_start_page, scrape_explanations)
-            total_inserted += inserted
-            total_pages_processed += len(chunk_pages)
-            
-            logger.info(f"[pacegkacademy] ========== CHUNK {chunk_number} COMPLETE ==========")
-            logger.info(f"[pacegkacademy] [Chunk {chunk_number}] Inserted {inserted} new MCQs from pages {chunk_start_page}-{actual_chunk_end}")
-            logger.info(f"[pacegkacademy] [Progress] Total: {total_inserted} MCQs from {total_pages_processed} pages processed")
-            logger.info(f"[pacegkacademy] ========================================")
-            
-            # If we got fewer pages than chunk_size, we've reached the end
-            if len(chunk_pages) < chunk_size:
-                logger.info(f"[pacegkacademy] reached last page (got {len(chunk_pages)} < {chunk_size})")
-                break
-                
-            # Sleep between chunks to prevent socket bombing
-            import time
-            logger.info(f"[pacegkacademy] Sleeping for 4 seconds before next chunk to prevent socket hanging...")
-            time.sleep(4)
-        
-        logger.info(f"[pacegkacademy] Done — inserted {total_inserted} MCQs into category {category_id} from {total_pages_processed} pages")
-        
+        logger.info(f"[pacegkacademy] Fetching start URL to detect page type: {url}")
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        start_soup = BeautifulSoup(resp.text, "html.parser")
+
+        # ---------------------------------------------------------------
+        # LISTING PAGE DETECTION
+        # A listing page has paper cards: div.courses-item.content > div.content-part
+        # ---------------------------------------------------------------
+        is_listing = bool(start_soup.select_one("div.courses-item.content div.content-part"))
+
+        if is_listing:
+            logger.info(f"[pacegkacademy] Detected LISTING page — extracting individual paper links...")
+            papers = extract_paper_links_pacegkacademy(start_soup, base_url="https://www.pacegkacademy.com")
+            logger.info(f"[pacegkacademy] Found {len(papers)} papers on listing page")
+
+            for paper_idx, paper in enumerate(papers, 1):
+                paper_url = paper["url"]
+                paper_title = paper.get("title", "unknown")
+                dept = paper.get("department", "")
+                year = paper.get("year", "")
+                subtitle = paper.get("subtitle", "")
+                logger.info(f"[pacegkacademy] [{paper_idx}/{len(papers)}] Scraping paper: '{paper_title}' ({year}) — {dept} → {paper_url}")
+
+                # Build a paper-level slug from listing card metadata (before hitting the paper page)
+                def _sp(text: str) -> str:
+                    text = text.lower().strip()
+                    text = re.sub(r"[^a-z0-9]+", "-", text)
+                    return text.strip("-")
+
+                sub_parts = [parent_slug] if parent_slug else []
+                dept_slug = None
+                if dept:
+                    dept_part = _sp(dept)
+                    sub_parts.append(dept_part)
+                    dept_slug = "/".join(sub_parts)  # e.g. yearwise/2020/punjab-police-department
+
+                paper_slug_parts = sub_parts.copy()
+                if paper_title:
+                    paper_slug_parts.append(_sp(paper_title) + ("-" + _sp(year) if year else ""))
+                paper_slug = "/".join(paper_slug_parts)
+
+                with Session(engine) as session:
+                    # ── 1. Ensure intermediate DEPARTMENT category exists ──────────────
+                    if dept_slug:
+                        dept_cat = session.exec(select(Category).where(Category.slug == dept_slug)).one_or_none()
+                        if not dept_cat:
+                            dept_cat = Category(slug=dept_slug, name=dept)
+                            session.add(dept_cat)
+                            session.commit()
+                            session.refresh(dept_cat)
+                            logger.info(f"[pacegkacademy] Created dept category: slug={dept_slug!r} id={dept_cat.id}")
+
+                    # ── 2. Get or create PAPER category ────────────────────────────────
+                    cat = session.exec(select(Category).where(Category.slug == paper_slug)).one_or_none()
+                    if not cat:
+                        friendly_name = f"{paper_title}" + (f" ({year})" if year else "") + (f" — {dept}" if dept else "")
+                        cat = Category(slug=paper_slug, name=friendly_name)
+                        session.add(cat)
+                        session.commit()
+                        session.refresh(cat)
+                        logger.info(f"[pacegkacademy] Created paper category: slug={paper_slug!r} name={cat.name!r} id={cat.id}")
+                    paper_cat_id = cat.id
+
+
+                # Crawl and process the individual paper pages
+                chunk_pages = crawl_pages_pacegkacademy(paper_url, max_pages=50)
+                if chunk_pages:
+                    inserted = _process_pacegkacademy_pages(
+                        chunk_pages, paper_cat_id, paper_idx, 1,
+                        scrape_explanations, parent_slug=paper_slug,
+                        skip_subcategory=True  # category already resolved from listing card
+                    )
+                    total_inserted += inserted
+                    logger.info(f"[pacegkacademy] Paper '{paper_title}': inserted {inserted} MCQs")
+                else:
+                    logger.warning(f"[pacegkacademy] No pages found for paper: {paper_url}")
+
+                # Polite delay between papers
+                _time.sleep(2)
+
+        else:
+            # ---------------------------------------------------------------
+            # DIRECT MCQ PAGE — original chunked crawl
+            # ---------------------------------------------------------------
+            logger.info(f"[pacegkacademy] Detected DIRECT MCQ page — starting chunked crawl...")
+            chunk_size = 50
+            chunk_number = 0
+            total_pages_processed = 0
+
+            while True:
+                chunk_number += 1
+                chunk_url = url if chunk_number == 1 else f"{url}/page/{total_pages_processed + 1}"
+                chunk_start_page = total_pages_processed + 1
+
+                logger.info(f"[pacegkacademy] ========== CHUNK {chunk_number} START ==========")
+                chunk_pages = crawl_pages_pacegkacademy(chunk_url, max_pages=chunk_size)
+
+                if not chunk_pages:
+                    logger.info(f"[pacegkacademy] No more pages found, stopping")
+                    break
+
+                actual_end = chunk_start_page + len(chunk_pages) - 1
+                logger.info(f"[pacegkacademy] [Chunk {chunk_number}] Crawled {len(chunk_pages)} pages ({chunk_start_page}-{actual_end})")
+
+                inserted = _process_pacegkacademy_pages(
+                    chunk_pages, category_id, chunk_number,
+                    chunk_start_page, scrape_explanations, parent_slug=parent_slug
+                )
+                total_inserted += inserted
+                total_pages_processed += len(chunk_pages)
+
+                logger.info(f"[pacegkacademy] ========== CHUNK {chunk_number} COMPLETE: {inserted} MCQs ==========")
+
+                if len(chunk_pages) < chunk_size:
+                    logger.info(f"[pacegkacademy] Reached last page")
+                    break
+
+                _time.sleep(4)
+
+        logger.info(f"[pacegkacademy] Done — total inserted {total_inserted} MCQs")
+
     except Exception as e:
         logger.error(f"[pacegkacademy] Task failed: {e}", exc_info=True)
 
 
-def _process_pacegkacademy_pages(pages: List[str], category_id: int, chunk_number: int, start_page_num: int, scrape_explanations: bool = False) -> int:
+
+
+def _process_pacegkacademy_pages(pages: List[str], category_id: int, chunk_number: int, start_page_num: int, scrape_explanations: bool = False, parent_slug: str = "", skip_subcategory: bool = False) -> int:
     """
     Process a list of page URLs and insert MCQs into the database.
     
+    When the extractor supplies `source_paper` / `source_organization` on an MCQ,
+    a sub-category is automatically created with the slug:
+        {parent_slug}/{dept-slug}/{paper-slug}
+
+    For example, parent_slug="yearwise/2020", source_organization="Punjab Police Department",
+    source_paper="Assistant(2020)" produces:
+        yearwise/2020/punjab-police-department/assistant-2020
+
     Args:
         pages: List of page URLs to process
-        category_id: Category ID to insert MCQs into
+        category_id: Fallback category ID when no paper metadata is present
         chunk_number: Current chunk number for logging
         start_page_num: Starting page number for this chunk
         scrape_explanations: If True, scrape detailed explanations
+        parent_slug: The top-level slug from the scrape request (used to build sub-slugs)
     
     Returns:
         Number of MCQs inserted
     """
+
+    def _slug_part(text: str) -> str:
+        """Normalize text to a safe slug segment."""
+        text = text.lower().strip()
+        text = re.sub(r"[^a-z0-9]+", "-", text)   # non-alphanumeric → dash
+        return text.strip("-")
+
     inserted = 0
-    
+    # Cache: sub_slug → category_id to avoid hitting DB on every MCQ
+    _cat_cache: dict = {}
+
     with Session(engine) as session:
         for idx, page_url in enumerate(pages, 1):
             page_num = start_page_num + idx - 1
@@ -1228,17 +1345,55 @@ def _process_pacegkacademy_pages(pages: List[str], category_id: int, chunk_numbe
             page_inserted = 0
             
             for mcq_data in mcqs:
+                # -------------------------------------------------------
+                # Resolve target category: use per-paper sub-category if
+                # source_paper / source_organization are present.
+                # -------------------------------------------------------
+                src_paper = mcq_data.pop("source_paper", None)
+                src_org   = mcq_data.pop("source_organization", None)
+
+                target_cat_id = category_id  # default fallback
+
+                if not skip_subcategory and (src_paper or src_org):
+                    # Build a sub-slug: parent_slug/dept/paper
+                    parts = [parent_slug] if parent_slug else []
+                    if src_org:
+                        parts.append(_slug_part(src_org))
+                    if src_paper:
+                        parts.append(_slug_part(src_paper))
+                    sub_slug = "/".join(parts)
+
+                    if sub_slug in _cat_cache:
+                        target_cat_id = _cat_cache[sub_slug]
+                    else:
+                        existing_cat = session.exec(
+                            select(Category).where(Category.slug == sub_slug)
+                        ).one_or_none()
+
+                        if existing_cat:
+                            target_cat_id = existing_cat.id
+                        else:
+                            # Auto-create the sub-category
+                            friendly_name = f"{src_paper or ''} — {src_org or ''}".strip(" —")
+                            new_cat = Category(slug=sub_slug, name=friendly_name)
+                            session.add(new_cat)
+                            session.flush()   # get new_cat.id without a full commit
+                            target_cat_id = new_cat.id
+                            logger.info(f"[pacegkacademy] Created sub-category: slug={sub_slug!r} name={friendly_name!r} id={target_cat_id}")
+
+                        _cat_cache[sub_slug] = target_cat_id
+
                 # Check for duplicates without triggering autoflush of pending inserts
                 with session.no_autoflush:
                     existing = session.exec(
                         select(MCQ).where(
                             (MCQ.question_text == mcq_data["question_text"]) &
-                            (MCQ.category_id == category_id)
+                            (MCQ.category_id == target_cat_id)
                         )
                     ).first()
                 
                 if not existing:
-                    mcq = MCQ(**mcq_data, category_id=category_id)
+                    mcq = MCQ(**mcq_data, category_id=target_cat_id)
                     session.add(mcq)
                     inserted += 1
                     page_inserted += 1
@@ -1249,6 +1404,7 @@ def _process_pacegkacademy_pages(pages: List[str], category_id: int, chunk_numbe
             logger.info(f"[pacegkacademy] [Chunk {chunk_number}] Page {page_num}: inserted {page_inserted}/{len(mcqs)} MCQs (skipped {len(mcqs) - page_inserted} duplicates)")
     
     return inserted
+
 
 
 @router.post(
@@ -1275,7 +1431,7 @@ def enqueue_scrape_pacegkacademy(
     # 2) Schedule the background task with PaceGKAcademy-specific extractor
     logger.info(f"[pacegkacademy] enqueueing task for category_id={cat.id}, url={req.url}, scrape_explanations={req.scrape_explanations}")
     threading.Thread(target=_scrape_and_insert_pacegkacademy_task, args=(
-        req.url, cat.id, req.scrape_explanations
+        req.url, cat.id, req.scrape_explanations, req.slug
     ), daemon=True).start()
 
     explanation_msg = " with explanations" if req.scrape_explanations else ""

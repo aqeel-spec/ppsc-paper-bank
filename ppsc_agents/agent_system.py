@@ -8,8 +8,9 @@ import os
 import asyncio
 import httpx
 import json
+import contextvars
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from dotenv import load_dotenv
 import logging
 
@@ -51,6 +52,23 @@ from .api_key_rotator import get_github_models_config
 from .offline_model import OfflineEchoModel
 from types import SimpleNamespace
 
+
+# Per-request auth header propagated from HTTP route into tool calls.
+_CURRENT_AUTH_HEADER: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "current_auth_header",
+    default=None,
+)
+
+# Fallback for tool execution environments where contextvars may not flow.
+_GLOBAL_AUTH_HEADER: Optional[str] = None
+
+
+def _auth_headers() -> dict:
+    auth = _CURRENT_AUTH_HEADER.get() or _GLOBAL_AUTH_HEADER
+    if auth:
+        return {"Authorization": auth}
+    return {}
+
 # Optionally use application DB for LLM memory instead of SQLiteSession
 USE_DB_MEMORY = os.getenv("USE_DB_MEMORY", "0").strip() in {"1", "true", "yes"}
 
@@ -58,7 +76,7 @@ if USE_DB_MEMORY:
     try:
         # Lazy import to avoid circular imports during startup
         from app.database import get_engine
-        from app.models.interview import InterviewMessage
+        from app.models.interview import InterviewMessage, InterviewSession
         from sqlmodel import Session as SQLSession, select, col
 
         class DBSessionAdapter:
@@ -74,6 +92,29 @@ if USE_DB_MEMORY:
 
             def __init__(self, session_id: str):
                 self.session_id = session_id
+
+            @staticmethod
+            def _default_avatar_for_memory() -> str:
+                # InterviewSession.avatar is required; use a neutral value for agent chat memory sessions.
+                return "agent"
+
+            def _ensure_parent_session(self, db: SQLSession) -> None:
+                existing = db.exec(
+                    select(InterviewSession).where(InterviewSession.session_id == self.session_id)
+                ).first()
+                if existing is not None:
+                    return
+
+                db.add(
+                    InterviewSession(
+                        session_id=self.session_id,
+                        avatar=self._default_avatar_for_memory(),
+                        mode="single",
+                        status="active",
+                        total_messages=0,
+                    )
+                )
+                db.commit()
 
             async def get_items(self, limit: int | None = None):
                 """Return conversation history as SDK-compatible dicts."""
@@ -125,6 +166,8 @@ if USE_DB_MEMORY:
 
                     def _write():
                         with SQLSession(get_engine()) as db:
+                            self._ensure_parent_session(db)
+
                             # Determine next message_index
                             stmt = (
                                 select(InterviewMessage)
@@ -155,6 +198,13 @@ if USE_DB_MEMORY:
                                 )
                                 db.add(msg)
                                 next_idx += 1
+
+                            parent = db.exec(
+                                select(InterviewSession).where(InterviewSession.session_id == self.session_id)
+                            ).first()
+                            if parent is not None:
+                                parent.total_messages = next_idx
+                                db.add(parent)
                             db.commit()
 
                     await _asyncio.to_thread(_write)
@@ -315,6 +365,29 @@ def estimate_tokens(text: str, model_name: str | None = None) -> int:
     return max(1, int(len(text) / 4))
 
 
+def _deterministic_tool_failure_reply() -> str:
+    return (
+        "I could not complete that step because a required data/tool call failed. "
+        "I will not ask unrelated category questions. "
+        "Please resend your exact request in one line and I will retry directly. "
+        "Example: 'Make me 2020 and 2021 plan, 5 papers/day, start 2026-04-20'."
+    )
+
+
+def _looks_like_tool_failure_output(text: str) -> bool:
+    if not text:
+        return True
+    t = text.strip().lower()
+    failure_markers = [
+        "there was an error",
+        "error while trying to fetch",
+        "failed to fetch",
+        "could you please specify what kind of mcqs",
+        "which subject/category",
+    ]
+    return any(marker in t for marker in failure_markers)
+
+
 # ==================== MCQ Agent Tools ====================
 
 @function_tool
@@ -425,86 +498,200 @@ async def get_single_mcq(mcq_id: int, explanation: bool = True) -> str:
 # ==================== Paper Agent Tools ====================
 
 @function_tool
+async def generate_paper(
+    size: int = 100,
+    difficulty: str = "medium",
+    category_slug: Optional[str] = None,
+    category_id: Optional[int] = None,
+    year: Optional[int] = None,
+    subject: Optional[str] = None,
+    post: Optional[str] = None,
+    min_repeats: Optional[int] = None,
+    title: Optional[str] = None,
+    paper_type: Optional[str] = None,
+    tags: Optional[str] = None,
+) -> str:
+    """
+    Generate a single paper from MCQ bank criteria.
+    This calls POST /papers/generate and should only be used when user explicitly asks
+    for generating a paper. For yearwise mock series, use create_paper_series_from_years.
+    """
+    try:
+        payload = {
+            "size": max(1, min(size, 200)),
+            "difficulty": difficulty or "medium",
+            "category_slug": category_slug,
+            "category_id": category_id,
+            "year": year,
+            "subject": subject,
+            "post": post,
+            "min_repeats": min_repeats,
+            "title": title,
+            "paper_type": paper_type,
+            "tags": tags,
+        }
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.post(
+                f"{API_BASE_URL}/papers/generate",
+                json=payload,
+            )
+
+            if response.status_code in (200, 201):
+                data = response.json()
+                mcqs = data.get("mcqs", [])
+                return json.dumps({
+                    "success": True,
+                    "paper_id": data.get("id"),
+                    "created_at": data.get("created_at"),
+                    "category_id": data.get("category_id"),
+                    "category_slug": data.get("category_slug"),
+                    "question_count": len(mcqs),
+                    "message": f"Generated paper with {len(mcqs)} MCQs.",
+                }, indent=2)
+
+            return json.dumps({
+                "success": False,
+                "status_code": response.status_code,
+                "error": response.text,
+            }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": f"Error generating paper: {str(e)}"
+        }, indent=2)
+
+
+@function_tool
+async def create_paper_series_from_years(
+    years: str,
+    chunk_size: int = 5,
+    start_date_iso: Optional[str] = None,
+    title: Optional[str] = None,
+    include_half_tests: bool = True,
+    include_final_test: bool = True,
+) -> str:
+    """
+    Create a paper series from existing papers by year.
+
+    Args:
+        years: Comma-separated years, e.g. "2020" or "2020,2021"
+        chunk_size: Papers per day
+        start_date_iso: Start date in YYYY-MM-DD (defaults to today)
+        title: Optional custom series title
+        include_half_tests: Include half tests at end
+        include_final_test: Include final test at end
+    """
+    try:
+        parsed_years = sorted({int(y.strip()) for y in years.split(",") if y.strip()})
+        if not parsed_years:
+            return json.dumps({
+                "success": False,
+                "error": "No valid years provided. Example: years='2020' or years='2020,2021'"
+            }, indent=2)
+
+        if start_date_iso:
+            start_date = datetime.strptime(start_date_iso, "%Y-%m-%d").date().isoformat()
+        else:
+            start_date = date.today().isoformat()
+
+        payload = {
+            "title": title,
+            "mode": "ai",
+            "years": parsed_years,
+            "chunk_size": max(1, min(chunk_size, 50)),
+            "start_date": start_date,
+            "include_half_tests": include_half_tests,
+            "include_final_test": include_final_test,
+        }
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.post(
+                f"{API_BASE_URL}/paper-series",
+                json=payload,
+                headers=_auth_headers(),
+            )
+
+            if response.status_code in (200, 201):
+                data = response.json()
+                return json.dumps({
+                    "success": True,
+                    "series_id": data.get("id"),
+                    "title": data.get("title"),
+                    "years": data.get("years_json", parsed_years),
+                    "chunk_size": data.get("chunk_size"),
+                    "start_date": data.get("start_date"),
+                    "end_date": data.get("end_date"),
+                    "total_papers": data.get("total_papers"),
+                    "status": data.get("status"),
+                    "message": "Series created from existing paper bank by year.",
+                }, indent=2)
+
+            return json.dumps({
+                "success": False,
+                "status_code": response.status_code,
+                "error": response.text,
+            }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": f"Error creating paper series: {str(e)}"
+        }, indent=2)
+
+
+@function_tool
 async def create_paper(
     title: str,
     difficulty: Optional[str] = None,
     category_slug: Optional[str] = None,
     question_count: int = 20,
     paper_type: str = "practice",
-    year: Optional[int] = None
+    year: Optional[int] = None,
 ) -> str:
     """
-    Create a custom paper/test with MCQs based on complexity, category, and other filters.
-    
-    Args:
-        title: Title for the paper
-        difficulty: Filter by difficulty level (easy, medium, hard)
-        category_slug: Category slug to pick questions from
-        question_count: Number of questions to include (default: 20)
-        paper_type: Type of paper (practice, mock, previous)
-        year: Year of the paper (optional)
-    
-    Returns:
-        JSON string with paper details including paper_id and selected MCQs
+    Backward-compatible wrapper for older callers.
+
+    Deprecated behavior:
+    - This function now routes to /papers/generate via generate_paper.
+    - For yearwise mock series, use create_paper_series_from_years.
     """
     try:
-        # First, get MCQs from category if specified
-        mcqs = []
-        if category_slug:
-            async with httpx.AsyncClient(follow_redirects=True) as client:
-                params = {
-                    "limit": min(question_count, 100),  # Cap at 100 per request
-                    "offset": 0
-                }
-                response = await client.get(
-                    f"{API_BASE_URL}/categories/{category_slug}/with-mcqs",
-                    params=params
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    mcqs = data.get("mcqs", [])[:question_count]
-                    
-                    # Filter by difficulty if specified
-                    if difficulty and mcqs:
-                        mcqs = [m for m in mcqs if m.get("difficulty") == difficulty][:question_count]
-        
-        # Create paper in database
-        paper_data = {
+        payload = {
+            "size": max(1, min(question_count, 200)),
+            "difficulty": difficulty or "medium",
+            "category_slug": category_slug,
+            "year": year,
             "title": title,
             "paper_type": paper_type,
-            "difficulty": difficulty,
-            "year": year,
-            "mcq_links": {"mcq_ids": [mcq["id"] for mcq in mcqs]}
         }
-        
+
         async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.post(
-                f"{API_BASE_URL}/papers/",
-                json=paper_data
+                f"{API_BASE_URL}/papers/generate",
+                json=payload,
             )
-            
-            if response.status_code == 200:
-                paper = response.json()
+
+            if response.status_code in (200, 201):
+                data = response.json()
+                mcqs = data.get("mcqs", [])
                 return json.dumps({
                     "success": True,
-                    "paper_id": paper.get("id"),
-                    "title": title,
+                    "paper_id": data.get("id"),
+                    "created_at": data.get("created_at"),
                     "question_count": len(mcqs),
-                    "difficulty": difficulty,
-                    "mcqs": mcqs[:5],  # Return first 5 for preview
-                    "message": f"Paper '{title}' created successfully with {len(mcqs)} questions!"
+                    "message": f"Generated paper with {len(mcqs)} MCQs.",
                 }, indent=2)
-            else:
-                return json.dumps({
-                    "success": False,
-                    "error": f"Failed to create paper: {response.text}"
-                })
-    
+
+            return json.dumps({
+                "success": False,
+                "status_code": response.status_code,
+                "error": response.text,
+            }, indent=2)
     except Exception as e:
         return json.dumps({
             "success": False,
             "error": f"Error creating paper: {str(e)}"
-        })
+        }, indent=2)
 
 
 @function_tool
@@ -586,7 +773,7 @@ async def get_paper_mcqs(paper_id: int) -> str:
     try:
         async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(
-                f"{API_BASE_URL}/papers/{paper_id}/mcqs/"
+                f"{API_BASE_URL}/papers/{paper_id}/mcqs"
             )
             
             if response.status_code == 200:
@@ -718,14 +905,23 @@ orchestrator = Agent(
     instructions=(
         "You are the PPSC Paper Bank assistant. "
         "Help users with MCQs, papers, scraping, and exam prep. "
-        "Use the provided tools to fetch data. Be concise and helpful."
+        "Use the provided tools to fetch data and avoid unsupported claims. "
+        "For requests like 'create mock series from 2020 papers' or any yearwise series request, "
+        "ALWAYS use create_paper_series_from_years first because papers already exist in bank. "
+        "Do NOT use get_papers or generate_paper for yearwise series creation. "
+        "For follow-up confirmations like 'yes', 'yes proceed', or 'continue', "
+        "continue the most recent actionable plan from conversation memory instead of asking unrelated questions. "
+        "If data lookup fails, state the concrete failure and offer one direct retry path. "
+        "Do not ask for MCQ category when the user requested a year-based study plan unless category is truly required. "
+        "Be concise and helpful."
     ),
     model=github_model,
     tools=[
         get_categories,
         get_category_mcqs,
         get_single_mcq,
-        create_paper,
+        create_paper_series_from_years,
+        generate_paper,
         get_papers,
         get_paper_mcqs,
         search_internet,
@@ -791,6 +987,7 @@ async def run_agent(
 async def run_orchestrator(
     query: str,
     session_id: Optional[str] = None,
+    auth_header: Optional[str] = None,
 ) -> str:
     """
     Run the orchestrator with a query and optional session for conversation memory.
@@ -798,6 +995,7 @@ async def run_orchestrator(
     Args:
         query: User query/message
         session_id: Optional session ID for conversation history (e.g., 'user_123')
+        auth_header: Optional bearer authorization header propagated from API route
 
     Returns:
         Orchestrator's response
@@ -822,9 +1020,22 @@ async def run_orchestrator(
         est = estimate_tokens(context_text, getattr(orchestrator.model, "model", None) if hasattr(orchestrator, "model") else None)
         logger.info(f"Estimated tokens for orchestrator request: {est} (instr={estimate_tokens(instr_text)}, memory={estimate_tokens(mem_text)}, user={estimate_tokens(query)})")
 
-        result = await Runner.run(orchestrator, query, session=session)
+        global _GLOBAL_AUTH_HEADER
+        logger.info("Orchestrator auth forwarding: %s", "present" if auth_header else "missing")
+        token = _CURRENT_AUTH_HEADER.set(auth_header)
+        prev_global = _GLOBAL_AUTH_HEADER
+        _GLOBAL_AUTH_HEADER = auth_header
+        try:
+            result = await Runner.run(orchestrator, query, session=session)
+        finally:
+            _CURRENT_AUTH_HEADER.reset(token)
+            _GLOBAL_AUTH_HEADER = prev_global
         logger.info("✓ Orchestrator request completed successfully")
-        return result.final_output
+        output = (result.final_output or "").strip()
+        if _looks_like_tool_failure_output(output):
+            logger.warning("⚠️ Orchestrator produced tool-failure style output; returning deterministic fallback")
+            return _deterministic_tool_failure_reply()
+        return output
     except Exception as e:
         err_str = str(e).lower()
         if "too large" in err_str or "413" in err_str or "tokens_limit" in err_str:
@@ -833,6 +1044,9 @@ async def run_orchestrator(
                 "Sorry, that request was too large for the AI model. "
                 "Please try a shorter or simpler question."
             )
+        if "fetch" in err_str or "http" in err_str or "timeout" in err_str or "connection" in err_str:
+            logger.warning("⚠️ Tool/API failure detected — returning deterministic fallback")
+            return _deterministic_tool_failure_reply()
         handle_api_error(e)
         raise
 

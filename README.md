@@ -15,44 +15,68 @@ A FastAPI-based application for managing Multiple Choice Questions (MCQs) with P
 
 - Python 3.8 or higher
 - PostgreSQL database
-- Poetry for dependency management
+- uv for dependency management
 
 ## Installation
 
 1. Clone the repository
-2. Install Poetry if you haven't already:
+2. Install uv if you haven't already:
 
    ```bash
-   curl -sSL https://install.python-poetry.org | python3 -
+   pip install uv
    ```
 
 3. Install dependencies:
 
    ```bash
-   poetry install
+   uv sync
    ```
 
 4. Create a PostgreSQL database named `mcq_db`
 
 5. Copy `.env.example` to `.env` and update the database connection string if needed:
+
    ```bash
    cp .env.example .env
    ```
 
 ## Running the Application
 
-1. Activate the virtual environment:
+1. Run the application:
 
    ```bash
-   poetry shell
-   ```
-
-2. Run the application:
-   ```bash
-   uvicorn main:app --reload
+   uv run uvicorn main:app --reload
    ```
 
 The API will be available at `http://localhost:8000`
+
+## Database Migrations (SQLModel + Alembic)
+
+This project supports schema migrations with Alembic while keeping SQLModel models as the source of truth.
+
+1. Install dependencies:
+
+   ```bash
+   uv sync --dev
+   ```
+
+2. Create a migration from model changes:
+
+   ```bash
+   uv run alembic revision --autogenerate -m "describe_change"
+   ```
+
+3. Apply migrations:
+
+   ```bash
+   uv run alembic upgrade head
+   ```
+
+4. Check current migration state:
+
+   ```bash
+   uv run alembic current
+   ```
 
 ## API Documentation
 
@@ -63,7 +87,7 @@ Once the application is running, you can access:
 
 ## Project Structure
 
-```
+```text
 ppsc-paper-bank/
 ├── app/                    # Main application code
 │   ├── models/            # Database models
@@ -93,11 +117,13 @@ python scripts/utilities/seed.py
 ## Running Tests
 
 Run all tests:
+
 ```bash
 pytest
 ```
 
 Run specific test:
+
 ```bash
 pytest tests/test_mcq.py
 ```
@@ -137,7 +163,7 @@ See [docs/README.md](docs/README.md) for the complete documentation index.
 
 ## Recent Updates
 
-See [RECENT_UPDATES.md](RECENT_UPDATES.md) for the latest API + AI changes (chat vs stream split, DB cached ai_explanation, roadmap endpoint, embedded agent service).
+See [docs/RECENT_UPDATES.md](docs/RECENT_UPDATES.md) for the latest API + AI changes (chat vs stream split, DB cached ai_explanation, roadmap endpoint, embedded agent service).
 
 ## Contributing
 

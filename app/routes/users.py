@@ -94,17 +94,30 @@ def list_favorites(
     limit: int = Query(20, le=100),
     offset: int = Query(0, ge=0),
 ):
-    items = session.exec(
-        select(MCQFavorite)
+    from app.models.mcqs_bank import MCQ
+    # Join MCQFavorite with MCQ to return the actual question data
+    results = session.exec(
+        select(MCQFavorite, MCQ)
+        .join(MCQ, MCQFavorite.mcq_id == MCQ.id)
         .where(MCQFavorite.user_id == current_user.id)
         .order_by(MCQFavorite.created_at.desc())
         .offset(offset)
         .limit(limit)
     ).all()
+
     total = session.exec(
         select(func.count(MCQFavorite.id)).where(MCQFavorite.user_id == current_user.id)
     ).one()
+
+    items = []
+    for fav, mcq in results:
+        items.append({
+            "favorite": fav,
+            "mcq": mcq
+        })
+
     return {"count": total, "items": items}
+
 
 
 @router.post("/me/favorites", status_code=201)
@@ -120,7 +133,8 @@ def add_favorite(
         )
     ).one_or_none()
     if existing:
-        raise HTTPException(status_code=409, detail="MCQ already in favorites")
+        # Idempotent: if already favorited, just return it without error.
+        return existing
 
     fav = MCQFavorite(user_id=current_user.id, **body.model_dump())
     session.add(fav)

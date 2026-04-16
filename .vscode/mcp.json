@@ -2,7 +2,7 @@
   "servers": {
     "ppsc-paper-bank": {
       "type": "stdio",
-      "command": "poetry",
+      "command": "uv",
       "args": ["run", "python", "mcp_server.py"],
       "cwd": "${workspaceFolder}",
       "env": {

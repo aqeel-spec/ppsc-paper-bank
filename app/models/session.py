@@ -65,7 +65,7 @@ class MockSessionAnswer(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     session_id: str = Field(sa_column=Column(String(36), nullable=False, index=True))
     mcq_id: int = Field(nullable=False)
-    selected_option: Optional[str] = Field(default=None, sa_column=Column(String(1)))
+    selected_option: Optional[str] = Field(default=None, sa_column=Column(String(20)))
     is_correct: Optional[bool] = Field(default=None)
     time_taken_seconds: Optional[int] = Field(default=None)
     answered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

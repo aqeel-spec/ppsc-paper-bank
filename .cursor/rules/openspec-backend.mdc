@@ -1,0 +1,29 @@
+---
+description: Enforce OpenSpec-first backend edits
+globs:
+  - app/**/*.py
+  - main.py
+alwaysApply: true
+---
+
+# OpenSpec Backend Rule
+
+Use OpenSpec artifacts before coding:
+
+1. Read `openspec/backend-analysis.md`.
+2. Respect `openspec/openapi.json` as current API contract.
+3. Apply relevant skills from `openspec/skills/*.skill.md`.
+
+Backend requirements:
+
+- Keep FastAPI routes in `app/routes/` concise.
+- Keep data/business logic in services when possible.
+- Use SQLModel patterns already present in repository.
+- For DB model changes, add Alembic migration.
+- If route contract changes, regenerate OpenSpec OpenAPI JSON.
+
+Security requirements:
+
+- Do not hardcode secrets.
+- Maintain auth boundaries for admin-only endpoints.
+- Avoid broad CORS/security regressions.
