@@ -73,6 +73,13 @@ from .paper_series import (
     PaperSeriesAttemptSubmit,
     PaperSeriesRewardRead,
 )
+from .vocab import Word, DayPlan, WordCreate, WordRead, DayPlanCreate, DayPlanRead
+from .subject_notes import (
+    SubjectPreparationNote,
+    SubjectPreparationNoteCreate,
+    SubjectPreparationNoteUpdate,
+    SubjectPreparationNoteRead,
+)
 
 
 __all__ = [
@@ -143,4 +150,18 @@ __all__ = [
     "InterviewMode",
     "MessageRole",
     "SessionStatus",
+
+    # Vocab models
+    "Word",
+    "DayPlan",
+    "WordCreate",
+    "WordRead",
+    "DayPlanCreate",
+    "DayPlanRead",
+
+    # Subject preparation notes
+    "SubjectPreparationNote",
+    "SubjectPreparationNoteCreate",
+    "SubjectPreparationNoteUpdate",
+    "SubjectPreparationNoteRead",
 ]

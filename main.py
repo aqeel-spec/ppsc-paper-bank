@@ -21,6 +21,8 @@ from app.routes.community import router as community_router
 from app.routes.suggestions import router as suggestions_router
 from app.routes.admin import router as admin_router
 from app.routes.paper_series import router as paper_series_router
+from app.routes.vocab import router as vocab_router
+from app.routes.subject_notes import router as subject_notes_router
 
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
@@ -152,6 +154,8 @@ app.include_router(community_router)
 app.include_router(suggestions_router)
 app.include_router(admin_router)
 app.include_router(paper_series_router)
+app.include_router(vocab_router)
+app.include_router(subject_notes_router)
 
 
 # -----------------------------------------------------------------------------
