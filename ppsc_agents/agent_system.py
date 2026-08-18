@@ -48,7 +48,20 @@ httpx_logger = logging.getLogger('httpx')
 httpx_logger.setLevel(logging.ERROR)
 httpx_logger.propagate = False
 
-from .api_key_rotator import get_github_models_config
+# Suppress and disable OpenAI Agents telemetry / tracing export
+try:
+    from agents.tracing.setup import set_trace_provider
+    from agents.tracing.provider import DefaultTraceProvider
+    # Setting DefaultTraceProvider without backend exporter disables remote OpenAI trace export
+    set_trace_provider(DefaultTraceProvider())
+except Exception:
+    pass
+
+agents_logger = logging.getLogger('agents')
+agents_logger.setLevel(logging.ERROR)
+agents_logger.propagate = False
+
+from .api_key_rotator import get_github_models_config, get_llm_config
 from .offline_model import OfflineEchoModel
 from types import SimpleNamespace
 
@@ -274,8 +287,8 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 # Session storage file
 SESSION_DB = "agent_sessions.db"
 
-# Initialize GitHub Models configuration
-_gh_config: dict[str, str] = get_github_models_config()
+# Initialize LLM configuration (AWS Bedrock Mantle with GitHub Models fallback)
+_llm_config: dict[str, str] = get_github_models_config()
 
 github_model: Model
 
@@ -283,17 +296,17 @@ if OFFLINE_MODE:
     logger.info("🧪 Offline mode enabled (PPSC_OFFLINE=1) — external LLM calls disabled")
     github_model = OfflineEchoModel()
 else:
-    token = _gh_config["api_key"]
+    token = _llm_config["api_key"]
     if not token:
-        logger.warning("⚠️  GITHUB_TOKEN is empty! Set it in .env to use GitHub Models.")
+        logger.warning(f"⚠️  {_llm_config['name']} API key is empty! Set it in .env.")
 
-    logger.info(f"🔑 Using GitHub Models: {_gh_config['model']} @ {_gh_config['base_url']}")
+    logger.info(f"🔑 Using {_llm_config['name']}: {_llm_config['model']} @ {_llm_config['base_url']}")
 
-    # Create LiteLLM model pointed at GitHub Models (OpenAI-compatible)
+    # Create LiteLLM model pointed at Bedrock Mantle or GitHub Models (OpenAI-compatible)
     github_model = LitellmModel(
-        model=_gh_config["model"],
-        api_key=_gh_config["api_key"],
-        base_url=_gh_config["base_url"],
+        model=_llm_config["model"],
+        api_key=_llm_config["api_key"],
+        base_url=_llm_config["base_url"],
     )
 
 
