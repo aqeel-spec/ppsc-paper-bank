@@ -909,6 +909,116 @@ async def start_scraping(
         return f"Scraping started: {data.get('message', 'Success')}"
 
 
+# ==================== News & Current Affairs Agent Tools ====================
+
+@function_tool
+async def get_daily_news(section: str = "all", date_str: Optional[str] = None, limit: int = 5) -> str:
+    """
+    Fetch daily newspaper articles and current affairs headlines from Dawn and The News.
+
+    Args:
+        section: Section category (all, opinion, front-page, world, business, pakistan, latest-news)
+        date_str: Optional target date in YYYY-MM-DD format
+        limit: Maximum number of articles to return (default: 5)
+    """
+    try:
+        params: dict = {"limit": min(limit, 10)}
+        if section and section != "all":
+            params["section"] = section
+        if date_str:
+            params["date_str"] = date_str
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(f"{API_BASE_URL}/api/news/articles", params=params)
+            if response.status_code == 200:
+                articles = response.json()
+                if not articles:
+                    return "No newspaper articles found for the given criteria."
+                
+                lines = [f"Found {len(articles)} news articles:\n"]
+                for i, art in enumerate(articles, 1):
+                    lines.append(f"{i}. [{art.get('source', '').upper()} - {art.get('section', '')}] {art.get('title', 'Untitled')}")
+                    lines.append(f"   Published: {art.get('published_at', 'N/A')} | Author: {art.get('author') or 'Staff'}")
+                    if art.get('summary'):
+                        lines.append(f"   Summary: {art.get('summary')[:150]}...")
+                    lines.append(f"   ID: {art.get('id')}\n")
+                return "\n".join(lines)
+            return f"Error fetching news: status code {response.status_code}"
+    except Exception as e:
+        return f"Error querying news articles: {str(e)}"
+
+
+@function_tool
+async def get_current_affairs_mcqs(date_str: Optional[str] = None, limit: int = 5) -> str:
+    """
+    Get daily news-based Current Affairs multiple-choice questions for PPSC/FPSC prep.
+
+    Args:
+        date_str: Optional date in YYYY-MM-DD
+        limit: Number of questions (default: 5)
+    """
+    try:
+        params: dict = {"limit": min(limit, 10)}
+        if date_str:
+            params["date_str"] = date_str
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(f"{API_BASE_URL}/api/news/mcqs", params=params)
+            if response.status_code == 200:
+                mcqs = response.json()
+                if not mcqs:
+                    return "No current affairs MCQs found."
+                
+                lines = [f"Daily Current Affairs MCQs ({len(mcqs)}):\n"]
+                for i, m in enumerate(mcqs, 1):
+                    lines.append(f"{i}. {m.get('question')}")
+                    lines.append(f"   A) {m.get('option_1')}  B) {m.get('option_2')}  C) {m.get('option_3')}  D) {m.get('option_4')}")
+                    lines.append(f"   Correct Answer: {m.get('correct_answer')}")
+                    if m.get('explanation'):
+                        lines.append(f"   Explanation: {m.get('explanation')}")
+                    lines.append("")
+                return "\n".join(lines)
+            return f"Error fetching MCQs: {response.status_code}"
+    except Exception as e:
+        return f"Error retrieving current affairs MCQs: {str(e)}"
+
+
+@function_tool
+async def get_news_vocabulary(date_str: Optional[str] = None, limit: int = 5) -> str:
+    """
+    Get high-register academic vocabulary extracted from today's newspaper editorials.
+
+    Args:
+        date_str: Optional date in YYYY-MM-DD
+        limit: Number of words (default: 5)
+    """
+    try:
+        params: dict = {"limit": min(limit, 15)}
+        if date_str:
+            params["date_str"] = date_str
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(f"{API_BASE_URL}/api/news/vocab", params=params)
+            if response.status_code == 200:
+                words = response.json()
+                if not words:
+                    return "No vocabulary words found."
+                
+                lines = [f"Daily High-Register Vocabulary ({len(words)}):\n"]
+                for i, w in enumerate(words, 1):
+                    lines.append(f"{i}. **{w.get('word')}** ({w.get('part_of_speech') or 'n/a'}, {w.get('phonetic') or ''})")
+                    lines.append(f"   Meaning: {w.get('css_meaning')}")
+                    if w.get('synonyms'):
+                        lines.append(f"   Synonyms: {w.get('synonyms')}")
+                    if w.get('css_usage_example'):
+                        lines.append(f"   CSS Essay Example: \"{w.get('css_usage_example')}\"")
+                    lines.append("")
+                return "\n".join(lines)
+            return f"Error fetching vocab: {response.status_code}"
+    except Exception as e:
+        return f"Error retrieving vocabulary: {str(e)}"
+
+
 # ==================== Create Agents ====================
 
 # Single unified agent with all tools (avoids nested-agent serialisation
@@ -919,6 +1029,7 @@ orchestrator = Agent(
         "You are the PPSC Paper Bank assistant. "
         "Help users with MCQs, papers, scraping, and exam prep. "
         "Use the provided tools to fetch data and avoid unsupported claims. "
+        "For daily news, current affairs MCQs, or editorial vocab, use get_daily_news, get_current_affairs_mcqs, and get_news_vocabulary. "
         "For requests like 'create mock series from 2020 papers' or any yearwise series request, "
         "ALWAYS use create_paper_series_from_years first because papers already exist in bank. "
         "Do NOT use get_papers or generate_paper for yearwise series creation. "
@@ -937,6 +1048,9 @@ orchestrator = Agent(
         generate_paper,
         get_papers,
         get_paper_mcqs,
+        get_daily_news,
+        get_current_affairs_mcqs,
+        get_news_vocabulary,
         search_internet,
         start_scraping,
     ],

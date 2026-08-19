@@ -14,8 +14,7 @@ __pycache__/
 .app*.pytest_cache/*
 .tests*.pytest_cache/*
 
-# Ignore docs and script folder at rrot levels
-/docs
+# Ignore script folder at root levels
 /scripts/*
 
 .env

@@ -106,6 +106,20 @@ from .subject_notes import (
     SubjectPreparationNoteUpdate,
     SubjectPreparationNoteRead,
 )
+from .news import (
+    NewsArticle,
+    NewsMCQ,
+    NewsVocab,
+    NewsPoVAnalysis,
+    NewsArticleRead,
+    NewsMCQRead,
+    NewsVocabRead,
+    NewsPoVAnalysisRead,
+    NewsCollectionRequest,
+    NewsCollectionResponse,
+    NewsVocabImportRequest,
+    NewsAgentChatRequest,
+)
 
 
 __all__ = [
@@ -209,4 +223,18 @@ __all__ = [
     "SubjectPreparationNoteCreate",
     "SubjectPreparationNoteUpdate",
     "SubjectPreparationNoteRead",
+
+    # News & Current Affairs models
+    "NewsArticle",
+    "NewsMCQ",
+    "NewsVocab",
+    "NewsPoVAnalysis",
+    "NewsArticleRead",
+    "NewsMCQRead",
+    "NewsVocabRead",
+    "NewsPoVAnalysisRead",
+    "NewsCollectionRequest",
+    "NewsCollectionResponse",
+    "NewsVocabImportRequest",
+    "NewsAgentChatRequest",
 ]

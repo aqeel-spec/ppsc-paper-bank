@@ -134,4 +134,4 @@ def all_papers_view(
             "total_pages":  total_pages,
             "show_answers": show_answers,
         }
-    )
+    )
