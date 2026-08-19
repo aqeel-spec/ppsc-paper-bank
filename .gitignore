@@ -14,10 +14,7 @@ __pycache__/
 .app*.pytest_cache/*
 .tests*.pytest_cache/*
 
-# Ignore script folder at root levels
-/scripts/*
-
-.env
+# Ignore environment and cache files
 
 __pycache__/
 *.py[cod]
