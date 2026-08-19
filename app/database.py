@@ -231,7 +231,10 @@ def _normalize_database_url(db_url: str) -> str:
     - everything else assumed to already be a SQLAlchemy URL
     """
 
-    raw = db_url.strip()
+    raw = db_url.strip().strip("'\"")
+    # Clean accidental duplicate variable names like DATABASE_URL=postgresql://...
+    if raw.lower().startswith("database_url="):
+        raw = raw[len("database_url="):].strip().strip("'\"")
     lower = raw.lower()
 
     if lower.startswith("jdbc:sqlserver://"):
