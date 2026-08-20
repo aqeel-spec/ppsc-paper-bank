@@ -795,3 +795,53 @@ async def vocab_agent_chat(
         },
     }
 
+
+# ─── User Goal Settings Endpoints ──────────────────────────────────────────────
+
+class VocabSettingsPayload(SQLModel):
+    cards_per_day: Optional[int] = 5
+    reminder_time: Optional[str] = "08:00"
+    email_notifications: Optional[bool] = True
+
+
+@router.get("/vocab/settings")
+@router.get("/words/settings")
+def get_vocab_settings(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    settings = db.get(UserVocabSettings, current_user.id)
+    if not settings:
+        settings = UserVocabSettings(user_id=current_user.id, cards_per_day=5)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return {
+        "cards_per_day": getattr(settings, "cards_per_day", 5) or 5,
+        "reminder_time": getattr(settings, "reminder_time", "08:00") or "08:00",
+        "email_notifications": True,
+    }
+
+
+@router.post("/vocab/settings")
+@router.post("/words/settings")
+def update_vocab_settings(
+    payload: VocabSettingsPayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    settings = db.get(UserVocabSettings, current_user.id)
+    if not settings:
+        settings = UserVocabSettings(user_id=current_user.id)
+    if payload.cards_per_day is not None:
+        settings.cards_per_day = max(1, min(50, payload.cards_per_day))
+    if hasattr(settings, "reminder_time") and payload.reminder_time:
+        setattr(settings, "reminder_time", payload.reminder_time)
+    db.add(settings)
+    db.commit()
+    return {
+        "status": "success",
+        "cards_per_day": getattr(settings, "cards_per_day", 5) or 5,
+        "reminder_time": payload.reminder_time or "08:00",
+        "email_notifications": payload.email_notifications if payload.email_notifications is not None else True,
+    }

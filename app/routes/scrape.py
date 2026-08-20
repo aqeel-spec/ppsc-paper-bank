@@ -415,6 +415,29 @@ def _scrape_and_insert_testpoint_chunk_task(
             return
 
 
+def _get_or_create_category(session: Session, slug: str, name: Optional[str] = None) -> Category:
+    """Safely get or create a Category row without throwing unique constraint IntegrityError on race conditions."""
+    cat = session.exec(select(Category).where(Category.slug == slug)).one_or_none()
+    if cat is not None:
+        return cat
+    display_name = name or slug.replace("_", " ").replace("/", " / ").title()
+    try:
+        cat = Category(slug=slug, name=display_name)
+        session.add(cat)
+        session.commit()
+        session.refresh(cat)
+        return cat
+    except Exception:
+        session.rollback()
+        cat = session.exec(select(Category).where(Category.slug == slug)).one_or_none()
+        if cat is not None:
+            return cat
+        first = session.exec(select(Category)).first()
+        if first is not None:
+            return first
+        raise
+
+
 @router.post(
     "/testpoint",
     response_model=ScrapeResponse,
@@ -425,15 +448,8 @@ def enqueue_scrape(
     background_tasks: BackgroundTasks,
     session: SessionDep,
 ):
-    # 1) Look up the Category row in the DB (or create it if missing)
-    cat = session.exec(select(Category).where(Category.slug == req.slug)).one_or_none()
-    if not cat:
-        # auto-create the category record
-        logger.info(f"[scrape] creating Category slug={req.slug!r}")
-        cat = Category(slug=req.slug, name=req.slug.replace("_", " ").title())
-        session.add(cat)
-        session.commit()
-        session.refresh(cat)
+    # 1) Look up or safely create the Category row
+    cat = _get_or_create_category(session, req.slug)
 
     # 2) Create/resume a persistent scraping state
     st = _get_or_create_manual_scraping_state(
@@ -1007,14 +1023,8 @@ def enqueue_scrape_pakmcqs(
     # so that derived sub-category slugs become "subjectwise/mathematics-mcqs/basic-maths-mcqs".
     slug_prefix = req.slug if req.is_top_bar else None
 
-    # 1) Resolve / auto-create Category
-    cat = session.exec(select(Category).where(Category.slug == req.slug)).one_or_none()
-    if not cat:
-        logger.info(f"[pakmcqs] creating Category slug={req.slug!r}")
-        cat = Category(slug=req.slug, name=req.slug.replace("_", " ").replace("/", " / ").title())
-        session.add(cat)
-        session.commit()
-        session.refresh(cat)
+    # 1) Resolve / auto-create Category safely
+    cat = _get_or_create_category(session, req.slug)
 
     # 2) Auto-resume: if the same base URL is requested again and no explicit
     #    state_id is provided, find the latest resumable state for this URL
@@ -1418,15 +1428,8 @@ def enqueue_scrape_pacegkacademy(
     session: SessionDep,
 ):
     """Endpoint for scraping PaceGKAcademy.com with its specific structure"""
-    # 1) Look up the Category row in the DB (or create it if missing)
-    cat = session.exec(select(Category).where(Category.slug == req.slug)).one_or_none()
-    if not cat:
-        # auto-create the category record
-        logger.info(f"[pacegkacademy] creating Category slug={req.slug!r}")
-        cat = Category(slug=req.slug, name=req.slug.replace("_", " ").title())
-        session.add(cat)
-        session.commit()
-        session.refresh(cat)
+    # 1) Look up or safely create the Category row
+    cat = _get_or_create_category(session, req.slug)
 
     # 2) Schedule the background task with PaceGKAcademy-specific extractor
     logger.info(f"[pacegkacademy] enqueueing task for category_id={cat.id}, url={req.url}, scrape_explanations={req.scrape_explanations}")
@@ -1436,6 +1439,31 @@ def enqueue_scrape_pacegkacademy(
 
     explanation_msg = " with explanations" if req.scrape_explanations else ""
     return ScrapeResponse(message=f"PaceGKAcademy scraping of '{req.slug}'{explanation_msg} started")
+
+
+@router.post(
+    "/start",
+    response_model=ScrapeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@router.post(
+    "/start/",
+    response_model=ScrapeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_scrape_unified(
+    req: ScrapeRequest,
+    background_tasks: BackgroundTasks,
+    session: SessionDep,
+):
+    """Unified entrypoint for scraping tasks. Routes automatically based on URL."""
+    url_lower = (req.url or "").lower()
+    if "pacegk" in url_lower:
+        return enqueue_scrape_pacegkacademy(req=req, background_tasks=background_tasks, session=session)
+    elif "testpoint" in url_lower:
+        return enqueue_scrape(req=req, background_tasks=background_tasks, session=session)
+    else:
+        return enqueue_scrape_pakmcqs(req=req, background_tasks=background_tasks, session=session)
 
 
 # ===========================================================================
@@ -1810,3 +1838,45 @@ def resume_backfill_explanations_pakmcqs(
         message=f"Explanation backfill resumed (state={state_label!r})",
         state_id=st.id,
     )
+
+
+@router.get("/status")
+def get_all_scraping_status(session: SessionDep):
+    """Return status of active or recent scraping states."""
+    states = session.exec(
+        select(ScrapingState).order_by(ScrapingState.updated_at.desc()).limit(5)
+    ).all()
+    if not states:
+        return {"status": "IDLE", "message": "No active or recent scraping tasks", "mcqs_inserted": 0}
+    top = states[0]
+    return {
+        "id": top.id,
+        "status": top.status.value if hasattr(top.status, "value") else str(top.status),
+        "category_slug": top.category_name or "N/A",
+        "mcqs_inserted": top.total_mcqs_saved or 0,
+        "message": f"Pages processed: {top.last_page_processed or 0}",
+        "recent_states": [
+            {
+                "id": s.id,
+                "status": s.status.value if hasattr(s.status, "value") else str(s.status),
+                "slug": s.category_name,
+                "saved": s.total_mcqs_saved or 0,
+            }
+            for s in states
+        ],
+    }
+
+
+@router.get("/state/{state_id}")
+def get_scraping_state(state_id: int, session: SessionDep):
+    """Get detailed status for a specific scraping state by ID."""
+    state = session.exec(select(ScrapingState).where(ScrapingState.id == state_id)).one_or_none()
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Scraping state {state_id} not found")
+    return {
+        "id": state.id,
+        "status": state.status.value if hasattr(state.status, "value") else str(state.status),
+        "category_slug": state.category_name or "N/A",
+        "mcqs_inserted": state.total_mcqs_saved or 0,
+        "message": f"Pages processed: {state.last_page_processed or 0}",
+    }

@@ -223,7 +223,7 @@ def create_goal(
 @router.patch("/me/goals/{goal_id}", response_model=LearningGoalRead)
 def update_goal(
     goal_id: str,
-    body: LearningGoalCreate,
+    body: dict,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -233,13 +233,80 @@ def update_goal(
     ).one_or_none()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-    for k, v in body.model_dump(exclude_none=True).items():
-        setattr(goal, k, v)
+    for k, v in body.items():
+        if hasattr(goal, k) and v is not None:
+            setattr(goal, k, v)
     goal.updated_at = datetime.now(timezone.utc)
     session.add(goal)
     session.commit()
     session.refresh(goal)
     return goal
+
+
+@router.delete("/me/goals/{goal_id}")
+def delete_goal(
+    goal_id: str,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    goal = session.exec(
+        select(LearningGoal)
+        .where(LearningGoal.id == goal_id, LearningGoal.user_id == current_user.id)
+    ).one_or_none()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    session.delete(goal)
+    session.commit()
+    return {"message": "Goal deleted successfully", "id": goal_id}
+
+
+@router.post("/goals/cron/morning-reminders")
+def send_morning_goal_email_reminders(session: Session = Depends(get_session)):
+    """
+    Morning email dispatch cron (7:00 AM - 10:00 AM window).
+    Sends active candidates a daily summary of their pending study goals & vocabulary targets.
+    """
+    from app.services.email_service import broadcast_email_message
+    from app.models.vocab import Word
+
+    now = datetime.now(timezone.utc)
+    users = session.exec(select(User).where(User.is_active == True)).all()
+    emails_sent = 0
+
+    for user in users:
+        active_goals = session.exec(
+            select(LearningGoal).where(
+                LearningGoal.user_id == user.id,
+                LearningGoal.status == "active"
+            )
+        ).all()
+
+        if not active_goals:
+            continue
+
+        goal_lines = [f"• {g.title} ({g.daily_target_minutes} mins/day)" for g in active_goals[:5]]
+        recipient = user.email or os.getenv("ADMIN_EMAIL", "candidate@example.com")
+        subject = f"🌅 Morning Study Goal Reminder: {len(active_goals)} active targets for today!"
+        body = (
+            f"Good morning, {user.username or 'Candidate'}!\n\n"
+            f"Here is your active study goal lineup for today ({now.strftime('%A, %B %d, %Y')}):\n\n"
+            + "\n".join(goal_lines) +
+            "\n\nLog into your PPSC Dashboard to track progress or ask your AI Examiner to build a study roadmap:\n"
+            "http://localhost:3000/dashboard\n\n"
+            "Keep up the momentum!"
+        )
+        try:
+            broadcast_email_message(subject, body, [recipient])
+            emails_sent += 1
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "processed_users": len(users),
+        "emails_sent": emails_sent,
+        "timestamp": now.isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------

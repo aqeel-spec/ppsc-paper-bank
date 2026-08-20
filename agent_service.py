@@ -16,12 +16,12 @@ import os
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, Query
 from jose import JWTError
 from sqlmodel import Session
 from pydantic import BaseModel, Field
 
-from ppsc_agents import run_orchestrator
+from ppsc_agents import run_orchestrator, get_session_history, clear_session
 from app.models.user import User
 from app.database import get_session
 from app.security import create_access_token, decode_token, get_optional_user
@@ -123,3 +123,24 @@ async def agent_chat(
     )
 
     return AgentChatResponse(session_id=session_id, answer=answer)
+
+
+@app.get("/agent/history/{session_id}")
+async def get_history(session_id: str, limit: Optional[int] = Query(default=50, ge=1, le=200)):
+    """Retrieve chat history for a session."""
+    items = await get_session_history(session_id=session_id, limit=limit)
+    return {
+        "session_id": session_id,
+        "count": len(items),
+        "messages": items,
+    }
+
+
+@app.delete("/agent/history/{session_id}")
+async def delete_history(session_id: str):
+    """Clear chat history for a session."""
+    await clear_session(session_id=session_id)
+    return {
+        "session_id": session_id,
+        "status": "cleared",
+    }

@@ -38,7 +38,7 @@ class UrlsCollector:
         """Detect the website type based on the URL."""
         if 'pakmcqs.com' in url:
             return 'pakmcqs'
-        elif 'testpointpk.com' in url:
+        elif 'testpoint' in url:
             return 'testpoint'
         else:
             return 'unknown'
@@ -47,7 +47,7 @@ class UrlsCollector:
         """Extract website name from URL."""
         if 'pakmcqs.com' in url:
             return 'PakMcqs'
-        elif 'testpointpk.com' in url:
+        elif 'testpoint' in url:
             return 'TestPoint'
         else:
             return 'Unknown'
@@ -56,8 +56,8 @@ class UrlsCollector:
         """Extract base URL from full URL."""
         if 'pakmcqs.com' in url:
             return 'https://pakmcqs.com'
-        elif 'testpointpk.com' in url:
-            return 'https://testpointpk.com'
+        elif 'testpoint' in url:
+            return 'https://testpoint.pk'
         else:
             from urllib.parse import urlparse
             parsed = urlparse(url)

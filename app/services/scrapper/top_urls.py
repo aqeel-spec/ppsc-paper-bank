@@ -21,7 +21,7 @@ class WebsiteTopService(Generic[T]):
         """Detect the website type based on the URL."""
         if 'pakmcqs.com' in url:
             return 'pakmcqs'
-        elif 'testpointpk.com' in url:
+        elif 'testpoint' in url:
             return 'testpoint'
         else:
             return 'unknown'

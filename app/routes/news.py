@@ -29,7 +29,12 @@ from app.models.news import (
 )
 from app.models.vocab import WordRead
 from app.services.news_service import NewsService
-from ppsc_agents.agent_system import get_current_model, SESSION_DB
+from ppsc_agents.agent_system import (
+    get_current_model,
+    SESSION_DB,
+    search_internet,
+    search_web_deep,
+)
 from agents import Agent, Runner, SQLiteSession
 
 logger = logging.getLogger(__name__)
@@ -397,11 +402,17 @@ async def news_ai_chat(
         "Guidelines:\n"
         "1. Give structured, objective, and intellectually rigorous answers suitable for CSS/PPSC papers.\n"
         "2. When discussing issues, highlight facts, constitutional provisions, economic data, and balanced perspectives.\n"
-        "3. If asked for MCQs, vocab, or mnemonics, format them clearly."
+        "3. If asked for latest statistics, external updates, or background context not present in the article, use search_web_deep or search_internet to fetch live data.\n"
+        "4. If asked for MCQs, vocab, or mnemonics, format them clearly."
     )
 
     model = get_current_model()
-    agent = Agent(name="News Current Affairs Agent", instructions=instructions, model=model)
+    agent = Agent(
+        name="News Current Affairs Agent",
+        instructions=instructions,
+        model=model,
+        tools=[search_internet, search_web_deep],
+    )
 
     user_id_str = str(current_user.id) if current_user else "anonymous_guest"
     session_id = payload.session_id or f"news_chat_{user_id_str}"

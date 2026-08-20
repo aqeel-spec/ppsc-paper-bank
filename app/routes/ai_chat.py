@@ -27,6 +27,7 @@ from ppsc_agents.agent_system import (
     SESSION_DB,
     handle_api_error,
     search_internet,
+    search_web_deep,
     get_current_model,
     get_categories,
     get_category_mcqs,
@@ -165,6 +166,7 @@ def _build_general_chat_agent(*, use_internet: bool) -> Agent[None]:
     ])
     if use_internet:
         tools.append(search_internet)
+        tools.append(search_web_deep)
 
     return Agent(
         name="PPSC Chat",
